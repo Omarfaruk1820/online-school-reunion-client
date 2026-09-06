@@ -39,6 +39,12 @@ googleProvider.setCustomParameters({
 });
 
 // ============================================================
+// CONSTANTS
+// ============================================================
+
+const DEFAULT_USER_NAME = "School Member";
+
+// ============================================================
 // AUTH PROVIDER
 // ============================================================
 
@@ -48,9 +54,7 @@ const AuthProvider = ({ children }) => {
   // ==========================================================
 
   const [user, setUser] = useState(null);
-
   const [loading, setLoading] = useState(true);
-
   const [authError, setAuthError] = useState(null);
 
   // ==========================================================
@@ -58,37 +62,33 @@ const AuthProvider = ({ children }) => {
   // ==========================================================
 
   /*
-   * Stores currently running synchronization promises.
+   * Prevents duplicate Firebase → MongoDB synchronization.
    *
-   * This prevents:
-   *
-   * Register
-   *      +
-   * onAuthStateChanged
-   *
-   * from creating/updating the same MongoDB user
-   * unnecessarily at the same time.
+   * This is especially useful because React StrictMode can
+   * cause effects to run more than once during development.
    */
   const syncPromiseRef = useRef(new Map());
 
+  /*
+   * Prevents state updates after component unmount.
+   */
+  const isMountedRef = useRef(true);
+
   // ==========================================================
-  // NORMALIZE EMAIL
+  // EMAIL NORMALIZATION
   // ==========================================================
 
   const normalizeEmail = useCallback((email) => {
-    return typeof email === "string" ? email.trim().toLowerCase() : "";
+    if (typeof email !== "string") {
+      return "";
+    }
+
+    return email.trim().toLowerCase();
   }, []);
 
   // ==========================================================
   // GET FIREBASE ID TOKEN
   // ==========================================================
-
-  /*
-   * Firebase automatically refreshes the token when necessary.
-   *
-   * forceRefresh = true should only be used when an explicit
-   * fresh token is required.
-   */
 
   const getFirebaseIdToken = useCallback(
     async (firebaseUser = auth.currentUser, forceRefresh = false) => {
@@ -108,17 +108,45 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
+  // DETECT AUTH PROVIDER
+  // ==========================================================
+
+  const getProvider = useCallback((firebaseUser) => {
+    if (!firebaseUser) {
+      return "password";
+    }
+
+    const googleProviderExists = firebaseUser.providerData?.some(
+      (provider) => provider.providerId === "google.com",
+    );
+
+    if (googleProviderExists) {
+      return "google";
+    }
+
+    return "password";
+  }, []);
+
+  // ==========================================================
   // GET CURRENT USER FROM MONGODB
   // ==========================================================
 
   /*
-   * Backend:
+   * Backend endpoint:
    *
    * GET /api/auth/me
    *
-   * Server:
-   * verifyToken
-   * verifyUser
+   * axiosSecure baseURL should be:
+   *
+   * https://online-school-reunion-server.vercel.app/api
+   *
+   * Therefore:
+   *
+   * axiosSecure.get("/auth/me")
+   *
+   * becomes:
+   *
+   * https://online-school-reunion-server.vercel.app/api/auth/me
    */
 
   const getCurrentUser = useCallback(async () => {
@@ -134,11 +162,9 @@ const AuthProvider = ({ children }) => {
       return response.data?.user || null;
     } catch (error) {
       /*
-       * Firebase user exists but MongoDB
-       * user does not exist.
+       * Firebase user exists but MongoDB user does not exist.
        */
-
-      if (error.response?.status === 404) {
+      if (error?.response?.status === 404) {
         return null;
       }
 
@@ -151,15 +177,15 @@ const AuthProvider = ({ children }) => {
   // ==========================================================
 
   /*
-   * Backend:
+   * Backend endpoint:
    *
    * POST /api/users
    *
-   * Server gets Firebase identity from:
+   * Firebase identity is taken from:
    *
-   * req.user
+   * Authorization: Bearer <Firebase ID Token>
    *
-   * role/status are NOT sent from frontend.
+   * role and status are controlled by backend.
    */
 
   const saveUserToDatabase = useCallback(
@@ -168,52 +194,37 @@ const AuthProvider = ({ children }) => {
         throw new Error("Firebase user is required.");
       }
 
-      // ------------------------------------------------------
-      // Detect Firebase provider
-      // ------------------------------------------------------
+      const provider = getProvider(firebaseUser);
 
-      const firebaseProvider =
-        firebaseUser.firebase?.sign_in_provider ||
-        firebaseUser.providerData?.[0]?.providerId;
+      const cleanName =
+        typeof additionalData.name === "string"
+          ? additionalData.name.trim()
+          : firebaseUser.displayName?.trim() || DEFAULT_USER_NAME;
 
-      const provider =
-        firebaseProvider === "google.com" ? "google" : "password";
+      const cleanPhone =
+        typeof additionalData.phone === "string"
+          ? additionalData.phone.trim()
+          : "";
 
-      // ------------------------------------------------------
-      // Prepare payload
-      // ------------------------------------------------------
+      const cleanPhoto =
+        typeof additionalData.photo === "string"
+          ? additionalData.photo.trim()
+          : firebaseUser.photoURL || "";
+
+      const cleanProfile =
+        additionalData.profile &&
+        typeof additionalData.profile === "object" &&
+        !Array.isArray(additionalData.profile)
+          ? additionalData.profile
+          : {};
 
       const payload = {
-        name:
-          typeof additionalData.name === "string"
-            ? additionalData.name.trim()
-            : firebaseUser.displayName || "School Member",
-
-        phone:
-          typeof additionalData.phone === "string"
-            ? additionalData.phone.trim()
-            : "",
-
-        photo: additionalData.photo ?? firebaseUser.photoURL ?? "",
-
+        name: cleanName,
+        phone: cleanPhone,
+        photo: cleanPhoto,
         provider,
-
-        profile:
-          additionalData.profile &&
-          typeof additionalData.profile === "object" &&
-          !Array.isArray(additionalData.profile)
-            ? additionalData.profile
-            : {},
+        profile: cleanProfile,
       };
-
-      // ------------------------------------------------------
-      // POST /users
-      //
-      // axiosSecure automatically adds:
-      //
-      // Authorization:
-      // Bearer <Firebase ID Token>
-      // ------------------------------------------------------
 
       const response = await axiosSecure.post("/users", payload);
 
@@ -225,7 +236,7 @@ const AuthProvider = ({ children }) => {
 
       return response.data;
     },
-    [],
+    [getProvider],
   );
 
   // ==========================================================
@@ -238,28 +249,15 @@ const AuthProvider = ({ children }) => {
         return null;
       }
 
-      // ------------------------------------------------------
-      // Provider
-      // ------------------------------------------------------
-
-      const provider =
-        databaseUser?.provider ||
-        (firebaseUser.providerData?.some(
-          (item) => item.providerId === "google.com",
-        )
-          ? "google"
-          : "password");
-
-      // ------------------------------------------------------
-      // Application user
-      // ------------------------------------------------------
+      const provider = databaseUser?.provider || getProvider(firebaseUser);
 
       return {
         uid: firebaseUser.uid,
 
         _id: databaseUser?._id || databaseUser?.id || null,
 
-        name: databaseUser?.name || firebaseUser.displayName || "School Member",
+        name:
+          databaseUser?.name || firebaseUser.displayName || DEFAULT_USER_NAME,
 
         email: normalizeEmail(databaseUser?.email || firebaseUser.email),
 
@@ -267,13 +265,19 @@ const AuthProvider = ({ children }) => {
 
         photo: databaseUser?.photo || firebaseUser.photoURL || "",
 
+        /*
+         * IMPORTANT:
+         *
+         * role and status come from MongoDB.
+         * Never trust role/status from frontend.
+         */
         role: databaseUser?.role || "student",
 
         status: databaseUser?.status || "active",
 
         provider,
 
-        emailVerified: firebaseUser.emailVerified,
+        emailVerified: firebaseUser.emailVerified === true,
 
         createdAt: databaseUser?.createdAt || null,
 
@@ -284,11 +288,11 @@ const AuthProvider = ({ children }) => {
         profile: databaseUser?.profile || {},
       };
     },
-    [normalizeEmail],
+    [getProvider, normalizeEmail],
   );
 
   // ==========================================================
-  // SYNC USER WITH BACKEND
+  // SYNC FIREBASE USER WITH BACKEND
   // ==========================================================
 
   const syncUserWithBackend = useCallback(
@@ -300,10 +304,9 @@ const AuthProvider = ({ children }) => {
       const uid = firebaseUser.uid;
 
       /*
-       * If this UID is already being synchronized,
+       * If synchronization is already running for this UID,
        * return the existing promise.
        */
-
       const existingPromise = syncPromiseRef.current.get(uid);
 
       if (existingPromise) {
@@ -314,29 +317,29 @@ const AuthProvider = ({ children }) => {
         try {
           setAuthError(null);
 
-          // ------------------------------------------------
-          // 1. Check MongoDB
-          // ------------------------------------------------
+          // --------------------------------------------------
+          // 1. Try to get MongoDB user
+          // --------------------------------------------------
 
           let databaseUser = await getCurrentUser();
 
-          // ------------------------------------------------
-          // 2. Create MongoDB user if missing
-          // ------------------------------------------------
+          // --------------------------------------------------
+          // 2. Create MongoDB user if it does not exist
+          // --------------------------------------------------
 
           if (!databaseUser) {
             await saveUserToDatabase(firebaseUser, additionalData);
 
-            // ----------------------------------------------
-            // 3. Fetch newly created MongoDB user
-            // ----------------------------------------------
+            // ------------------------------------------------
+            // 3. Get newly created MongoDB user
+            // ------------------------------------------------
 
             databaseUser = await getCurrentUser();
           }
 
-          // ------------------------------------------------
-          // 4. If still missing, fail
-          // ------------------------------------------------
+          // --------------------------------------------------
+          // 4. Make sure user exists
+          // --------------------------------------------------
 
           if (!databaseUser) {
             throw new Error(
@@ -344,23 +347,27 @@ const AuthProvider = ({ children }) => {
             );
           }
 
-          // ------------------------------------------------
+          // --------------------------------------------------
           // 5. Build application user
-          // ------------------------------------------------
+          // --------------------------------------------------
 
           const applicationUser = buildUser(firebaseUser, databaseUser);
 
-          // ------------------------------------------------
+          // --------------------------------------------------
           // 6. Update React state
-          // ------------------------------------------------
+          // --------------------------------------------------
 
-          setUser(applicationUser);
+          if (isMountedRef.current) {
+            setUser(applicationUser);
+          }
 
           return applicationUser;
         } catch (error) {
           console.error("User synchronization failed:", error);
 
-          setAuthError(error);
+          if (isMountedRef.current) {
+            setAuthError(error);
+          }
 
           throw error;
         }
@@ -378,7 +385,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // REGISTER WITH EMAIL & PASSWORD
+  // REGISTER
   // ==========================================================
 
   const usersignup = useCallback(
@@ -398,9 +405,9 @@ const AuthProvider = ({ children }) => {
       let firebaseUser = null;
 
       try {
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // 1. Create Firebase account
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const result = await createUserWithEmailAndPassword(
           auth,
@@ -410,9 +417,9 @@ const AuthProvider = ({ children }) => {
 
         firebaseUser = result.user;
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // 2. Update Firebase display name
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const cleanName =
           typeof additionalData.name === "string"
@@ -425,36 +432,20 @@ const AuthProvider = ({ children }) => {
           });
         }
 
-        // ------------------------------------------------------
-        // 3. Sync Firebase user to MongoDB
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // 3. Sync with MongoDB
+        // ----------------------------------------------------
 
-        const applicationUser = await syncUserWithBackend(
-          firebaseUser,
-          additionalData,
-        );
-
-        // ------------------------------------------------------
-        // 4. Return Firebase user
-        //
-        // Existing UserRegister.jsx can continue using:
-        //
-        // await usersignup(...)
-        // ------------------------------------------------------
+        await syncUserWithBackend(firebaseUser, additionalData);
 
         return firebaseUser;
       } catch (error) {
         console.error("Email registration failed:", error);
 
         /*
-         * If Firebase account was created but MongoDB
-         * synchronization failed, try to remove the newly
-         * created Firebase account.
-         *
-         * This prevents an orphan Firebase account in
-         * most registration failure cases.
+         * Roll back Firebase account if MongoDB
+         * synchronization failed.
          */
-
         if (firebaseUser) {
           try {
             await deleteUser(firebaseUser);
@@ -463,7 +454,9 @@ const AuthProvider = ({ children }) => {
           }
         }
 
-        setAuthError(error);
+        if (isMountedRef.current) {
+          setAuthError(error);
+        }
 
         throw error;
       }
@@ -472,7 +465,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // LOGIN WITH EMAIL & PASSWORD
+  // LOGIN
   // ==========================================================
 
   const userLogin = useCallback(
@@ -490,9 +483,9 @@ const AuthProvider = ({ children }) => {
       }
 
       try {
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // 1. Firebase login
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const result = await signInWithEmailAndPassword(
           auth,
@@ -502,9 +495,9 @@ const AuthProvider = ({ children }) => {
 
         const firebaseUser = result.user;
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // 2. MongoDB synchronization
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         await syncUserWithBackend(firebaseUser);
 
@@ -512,7 +505,9 @@ const AuthProvider = ({ children }) => {
       } catch (error) {
         console.error("Email login failed:", error);
 
-        setAuthError(error);
+        if (isMountedRef.current) {
+          setAuthError(error);
+        }
 
         throw error;
       }
@@ -521,7 +516,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // LOGIN / REGISTER WITH GOOGLE
+  // GOOGLE LOGIN
   // ==========================================================
 
   const signInWithGoogle = useCallback(async () => {
@@ -537,7 +532,7 @@ const AuthProvider = ({ children }) => {
       const firebaseUser = result.user;
 
       // ------------------------------------------------------
-      // 2. Create/sync MongoDB user
+      // 2. MongoDB synchronization
       // ------------------------------------------------------
 
       await syncUserWithBackend(firebaseUser);
@@ -546,7 +541,9 @@ const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error("Google authentication failed:", error);
 
-      setAuthError(error);
+      if (isMountedRef.current) {
+        setAuthError(error);
+      }
 
       throw error;
     }
@@ -575,7 +572,9 @@ const AuthProvider = ({ children }) => {
       } catch (error) {
         console.error("Password reset failed:", error);
 
-        setAuthError(error);
+        if (isMountedRef.current) {
+          setAuthError(error);
+        }
 
         throw error;
       }
@@ -588,17 +587,18 @@ const AuthProvider = ({ children }) => {
   // ==========================================================
 
   /*
+   * Firebase:
+   *
+   * updateProfile()
+   *
+   * MongoDB:
+   *
+   * PATCH /api/auth/me
+   *
    * IMPORTANT:
    *
-   * Your current users.routes.js does NOT yet have:
-   *
-   * PATCH /users/me
-   *
-   * Therefore, this function expects that endpoint to be added.
-   *
-   * Recommended backend endpoint:
-   *
-   * PATCH /api/users/me
+   * This must NOT use /users/me because your backend
+   * users.routes.js does not have PATCH /users/me.
    */
 
   const updateUserProfile = useCallback(
@@ -612,6 +612,10 @@ const AuthProvider = ({ children }) => {
       setAuthError(null);
 
       try {
+        // ----------------------------------------------------
+        // Prepare data
+        // ----------------------------------------------------
+
         const cleanName =
           typeof profileData.name === "string"
             ? profileData.name.trim()
@@ -621,6 +625,16 @@ const AuthProvider = ({ children }) => {
           typeof profileData.photo === "string"
             ? profileData.photo.trim()
             : firebaseUser.photoURL || "";
+
+        const cleanPhone =
+          typeof profileData.phone === "string" ? profileData.phone.trim() : "";
+
+        const cleanProfile =
+          profileData.profile &&
+          typeof profileData.profile === "object" &&
+          !Array.isArray(profileData.profile)
+            ? profileData.profile
+            : undefined;
 
         // ----------------------------------------------------
         // 1. Update Firebase profile
@@ -632,26 +646,25 @@ const AuthProvider = ({ children }) => {
         });
 
         // ----------------------------------------------------
-        // 2. Update MongoDB
+        // 2. Update MongoDB profile
         // ----------------------------------------------------
 
-        const response = await axiosSecure.patch("/users/me", {
+        const payload = {
           name: cleanName,
-
-          phone:
-            typeof profileData.phone === "string"
-              ? profileData.phone.trim()
-              : undefined,
-
+          phone: cleanPhone,
           photo: cleanPhoto,
+        };
 
-          profile:
-            profileData.profile &&
-            typeof profileData.profile === "object" &&
-            !Array.isArray(profileData.profile)
-              ? profileData.profile
-              : undefined,
-        });
+        if (cleanProfile !== undefined) {
+          payload.profile = cleanProfile;
+        }
+
+        /*
+         * Correct backend endpoint:
+         *
+         * PATCH /api/auth/me
+         */
+        const response = await axiosSecure.patch("/auth/me", payload);
 
         if (!response.data?.success) {
           throw new Error(
@@ -663,17 +676,21 @@ const AuthProvider = ({ children }) => {
         // 3. Build updated application user
         // ----------------------------------------------------
 
-        const databaseUser = response.data?.user;
+        const databaseUser = response.data?.user || {};
 
         const applicationUser = buildUser(firebaseUser, databaseUser);
 
-        setUser(applicationUser);
+        if (isMountedRef.current) {
+          setUser(applicationUser);
+        }
 
         return applicationUser;
       } catch (error) {
         console.error("Profile update failed:", error);
 
-        setAuthError(error);
+        if (isMountedRef.current) {
+          setAuthError(error);
+        }
 
         throw error;
       }
@@ -682,42 +699,44 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // REFRESH CURRENT USER
+  // REFRESH USER
   // ==========================================================
 
   const refreshUser = useCallback(async () => {
     const firebaseUser = auth.currentUser;
 
     if (!firebaseUser) {
-      setUser(null);
+      if (isMountedRef.current) {
+        setUser(null);
+      }
+
       return null;
     }
 
     try {
-      const databaseUser = await getCurrentUser();
+      let databaseUser = await getCurrentUser();
 
+      /*
+       * If MongoDB user is missing, recreate/synchronize it.
+       */
       if (!databaseUser) {
-        /*
-         * Firebase account exists but MongoDB
-         * account is missing.
-         *
-         * Re-sync it.
-         */
-
         return await syncUserWithBackend(firebaseUser);
       }
 
       const applicationUser = buildUser(firebaseUser, databaseUser);
 
-      setUser(applicationUser);
-
-      setAuthError(null);
+      if (isMountedRef.current) {
+        setUser(applicationUser);
+        setAuthError(null);
+      }
 
       return applicationUser;
     } catch (error) {
       console.error("Failed to refresh user:", error);
 
-      setAuthError(error);
+      if (isMountedRef.current) {
+        setAuthError(error);
+      }
 
       throw error;
     }
@@ -735,16 +754,19 @@ const AuthProvider = ({ children }) => {
        * Firebase is responsible for authentication
        * session logout.
        */
-
       await signOut(auth);
 
-      setUser(null);
+      if (isMountedRef.current) {
+        setUser(null);
+      }
 
       syncPromiseRef.current.clear();
     } catch (error) {
       console.error("Logout failed:", error);
 
-      setAuthError(error);
+      if (isMountedRef.current) {
+        setAuthError(error);
+      }
 
       throw error;
     }
@@ -756,7 +778,6 @@ const AuthProvider = ({ children }) => {
 
   const clearUser = useCallback(() => {
     setUser(null);
-
     setAuthError(null);
 
     syncPromiseRef.current.clear();
@@ -767,14 +788,10 @@ const AuthProvider = ({ children }) => {
   // ==========================================================
 
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // ----------------------------------------------------
-      // Component unmounted
-      // ----------------------------------------------------
-
-      if (!isMounted) {
+      if (!isMountedRef.current) {
         return;
       }
 
@@ -783,61 +800,63 @@ const AuthProvider = ({ children }) => {
       // ----------------------------------------------------
 
       if (!firebaseUser) {
-        if (isMounted) {
-          setUser(null);
-          setAuthError(null);
-          setLoading(false);
-        }
+        setUser(null);
+        setAuthError(null);
+        setLoading(false);
 
         return;
       }
 
       // ----------------------------------------------------
-      // Start loading
+      // User logged in
       // ----------------------------------------------------
 
       setLoading(true);
 
       try {
-        /*
-         * syncUserWithBackend handles:
-         *
-         * 1. GET /auth/me
-         * 2. POST /users if missing
-         * 3. GET /auth/me again
-         * 4. Build application user
-         */
-
         const applicationUser = await syncUserWithBackend(firebaseUser);
 
-        if (isMounted) {
-          setUser(applicationUser);
-          setAuthError(null);
+        if (!isMountedRef.current) {
+          return;
         }
+
+        setUser(applicationUser);
+        setAuthError(null);
       } catch (error) {
         console.error("Auth state synchronization failed:", error);
 
-        if (isMounted) {
-          setUser(null);
-          setAuthError(error);
+        if (!isMountedRef.current) {
+          return;
         }
+
+        /*
+         * Do not automatically sign out the Firebase user
+         * here.
+         *
+         * The backend/network may temporarily be unavailable.
+         */
+        setUser(null);
+        setAuthError(error);
       } finally {
-        if (isMounted) {
+        if (isMountedRef.current) {
           setLoading(false);
         }
       }
     });
 
-    // ----------------------------------------------------------
-    // Cleanup
-    // ----------------------------------------------------------
-
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
 
       unsubscribe();
 
-      syncPromiseRef.current.clear();
+      /*
+       * Do not clear syncPromiseRef here.
+       *
+       * React StrictMode can temporarily unmount/remount
+       * components during development. Clearing active
+       * promises here can create unnecessary duplicate
+       * requests.
+       */
     };
   }, [syncUserWithBackend]);
 
@@ -847,53 +866,43 @@ const AuthProvider = ({ children }) => {
 
   const authInfo = useMemo(
     () => ({
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // State
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       user,
-
       loading,
-
       authError,
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // Authentication
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       usersignup,
-
       userLogin,
-
       signInWithGoogle,
-
       resetPassword,
-
       userLogout,
 
-      // --------------------------------------------------------
-      // User management
-      // --------------------------------------------------------
+      // ------------------------------------------------------
+      // User Management
+      // ------------------------------------------------------
 
       saveUserToDatabase,
-
       syncUserWithBackend,
-
       getCurrentUser,
-
       refreshUser,
-
       updateUserProfile,
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // Firebase
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       getFirebaseIdToken,
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // Utility
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       clearUser,
     }),
