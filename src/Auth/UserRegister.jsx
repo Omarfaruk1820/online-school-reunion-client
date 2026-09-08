@@ -15,6 +15,9 @@ import toast from "react-hot-toast";
 
 import useAuth from "../hooks/useAuth";
 
+const PHONE_REGEX = /^01[3-9]\d{8}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const UserRegister = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -35,6 +38,7 @@ const UserRegister = () => {
     register,
     handleSubmit,
     watch,
+    getValues,
     formState: { errors },
   } = useForm({
     mode: "onChange",
@@ -50,13 +54,12 @@ const UserRegister = () => {
 
   const password = watch("password");
 
-  /**
+  /*
    * Redirect authenticated users who directly visit
    * the registration page.
    *
-   * During an active registration request, this redirect
-   * is skipped because the registration flow itself handles
-   * the redirect after showing the success toast.
+   * During an active registration request, local loading
+   * prevents this redirect from interfering with registration.
    */
   useEffect(() => {
     if (authLoading || loading || !user) {
@@ -70,7 +73,63 @@ const UserRegister = () => {
     });
   }, [authLoading, loading, user, navigate, location.state]);
 
-  /**
+  /*
+   * Get the path where the user should be redirected
+   * after successful registration.
+   */
+  const getRedirectPath = () => {
+    return location.state?.from?.pathname || "/";
+  };
+
+  /*
+   * Convert different Firebase/Axios errors into
+   * user-friendly messages.
+   */
+  const getRegistrationErrorMessage = (err) => {
+    if (err?.response?.data?.message) {
+      return err.response.data.message;
+    }
+
+    switch (err?.code) {
+      case "auth/email-already-in-use":
+        return "An account already exists with this email address.";
+
+      case "auth/invalid-email":
+        return "Please enter a valid email address.";
+
+      case "auth/weak-password":
+        return "Password is too weak. Please use a stronger password.";
+
+      case "auth/network-request-failed":
+        return "Network error. Please check your internet connection.";
+
+      case "auth/too-many-requests":
+        return "Too many attempts. Please wait a moment and try again.";
+
+      case "auth/operation-not-allowed":
+        return "Email/password registration is currently unavailable.";
+
+      case "auth/popup-closed-by-user":
+        return "Google registration was cancelled.";
+
+      case "auth/popup-blocked":
+        return "Please allow popups in your browser and try again.";
+
+      case "auth/account-exists-with-different-credential":
+        return "An account already exists with this email using another sign-in method.";
+
+      case "auth/cancelled-popup-request":
+        return "Google registration was cancelled. Please try again.";
+
+      default:
+        return (
+          err?.message ||
+          "Registration failed. Please check your information and try again."
+        );
+    }
+  };
+
+  /*
    * Email/password registration
    */
   const handleRegister = async (data) => {
@@ -86,6 +145,44 @@ const UserRegister = () => {
       const cleanEmail = data.email.trim().toLowerCase();
       const cleanPhone = data.phone.trim();
 
+      /*
+       * Extra client-side validation.
+       * Server-side validation remains the final authority.
+       */
+      if (!cleanName) {
+        throw new Error("Full name is required.");
+      }
+
+      if (cleanName.length < 2) {
+        throw new Error("Name must be at least 2 characters.");
+      }
+
+      if (cleanName.length > 100) {
+        throw new Error("Name cannot exceed 100 characters.");
+      }
+
+      if (!EMAIL_REGEX.test(cleanEmail)) {
+        throw new Error("Please enter a valid email address.");
+      }
+
+      /*
+       * IMPORTANT:
+       * Never send null or empty phone to AuthProvider/server.
+       */
+      if (!cleanPhone) {
+        throw new Error("Phone number is required.");
+      }
+
+      if (!PHONE_REGEX.test(cleanPhone)) {
+        throw new Error("Enter a valid Bangladeshi phone number.");
+      }
+
+      /*
+       * Only send the fields required by AuthProvider
+       * and POST /api/users.
+       *
+       * phone is always a real string here.
+       */
       const userInfo = {
         name: cleanName,
         phone: cleanPhone,
@@ -93,9 +190,12 @@ const UserRegister = () => {
 
       await usersignup(cleanEmail, data.password, userInfo);
 
+      /*
+       * Registration succeeded.
+       */
       toast.success(`${cleanName}, registration successful!`);
 
-      const redirectPath = location.state?.from?.pathname || "/";
+      const redirectPath = getRedirectPath();
 
       navigate(redirectPath, {
         replace: true,
@@ -103,54 +203,26 @@ const UserRegister = () => {
     } catch (err) {
       console.error("Registration error:", err);
 
-      let errorMessage = "Registration failed. Please try again.";
-
-      switch (err?.code) {
-        case "auth/email-already-in-use":
-          errorMessage = "An account already exists with this email.";
-          break;
-
-        case "auth/invalid-email":
-          errorMessage = "Please enter a valid email address.";
-          break;
-
-        case "auth/weak-password":
-          errorMessage = "Password must be at least 6 characters.";
-          break;
-
-        case "auth/network-request-failed":
-          errorMessage =
-            "Network error. Please check your internet connection.";
-          break;
-
-        case "auth/too-many-requests":
-          errorMessage =
-            "Too many attempts. Please wait a moment and try again.";
-          break;
-
-        case "auth/operation-not-allowed":
-          errorMessage =
-            "Email/password registration is currently unavailable.";
-          break;
-
-        default:
-          if (err?.response?.data?.message) {
-            errorMessage = err.response.data.message;
-          } else if (err?.message) {
-            errorMessage = err.message;
-          }
-      }
+      const errorMessage = getRegistrationErrorMessage(err);
 
       setError(errorMessage);
-
       toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  /**
+  /*
    * Google registration / authentication
+   *
+   * The phone entered in the registration form is passed
+   * to AuthProvider.
+   *
+   * For a NEW Google user:
+   * phone is required by the backend.
+   *
+   * For an EXISTING Google user:
+   * AuthProvider can use the existing MongoDB record.
    */
   const handleGoogleRegister = async () => {
     if (loading) {
@@ -161,16 +233,34 @@ const UserRegister = () => {
     setError("");
 
     try {
-      const googleUser = await signInWithGoogle();
+      const formValues = getValues();
+
+      const cleanName = formValues.name?.trim() || "";
+      const cleanPhone = formValues.phone?.trim() || "";
+
+      /*
+       * Do not send null.
+       *
+       * If the field is empty, send an empty string.
+       * AuthProvider can determine whether an existing
+       * Google user already exists or a new phone is required.
+       */
+      const googleAdditionalData = {
+        name: cleanName,
+        phone: cleanPhone,
+      };
+
+      const googleUser = await signInWithGoogle(googleAdditionalData);
 
       const googleName =
         googleUser?.displayName?.trim() ||
+        cleanName ||
         user?.displayName?.trim() ||
         "School Member";
 
       toast.success(`${googleName}, registration successful!`);
 
-      const redirectPath = location.state?.from?.pathname || "/";
+      const redirectPath = getRedirectPath();
 
       navigate(redirectPath, {
         replace: true,
@@ -178,49 +268,16 @@ const UserRegister = () => {
     } catch (err) {
       console.error("Google registration error:", err);
 
-      let errorMessage = "Google registration failed. Please try again.";
-
-      switch (err?.code) {
-        case "auth/popup-closed-by-user":
-          errorMessage = "Google registration was cancelled.";
-          break;
-
-        case "auth/popup-blocked":
-          errorMessage = "Please allow popups and try again.";
-          break;
-
-        case "auth/account-exists-with-different-credential":
-          errorMessage =
-            "An account already exists with this email using another sign-in method.";
-          break;
-
-        case "auth/network-request-failed":
-          errorMessage =
-            "Network error. Please check your internet connection.";
-          break;
-
-        case "auth/too-many-requests":
-          errorMessage =
-            "Too many attempts. Please wait a moment and try again.";
-          break;
-
-        default:
-          if (err?.response?.data?.message) {
-            errorMessage = err.response.data.message;
-          } else if (err?.message) {
-            errorMessage = err.message;
-          }
-      }
+      const errorMessage = getRegistrationErrorMessage(err);
 
       setError(errorMessage);
-
       toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  /**
+  /*
    * Initial authentication loading state
    */
   if (authLoading && !user) {
@@ -280,6 +337,7 @@ const UserRegister = () => {
               <div
                 className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
                 role="alert"
+                aria-live="polite"
               >
                 <p className="text-sm leading-5 text-red-600">{error}</p>
               </div>
@@ -300,6 +358,11 @@ const UserRegister = () => {
 
               <span>{loading ? "Please wait..." : "Continue with Google"}</span>
             </button>
+
+            {/* Google helper */}
+            <p className="mt-2 text-center text-xs text-slate-400">
+              For a new Google account, a valid phone number is required.
+            </p>
 
             {/* Divider */}
             <div className="my-6 flex items-center gap-4">
@@ -351,6 +414,9 @@ const UserRegister = () => {
                         value: 100,
                         message: "Name cannot exceed 100 characters.",
                       },
+                      validate: (value) =>
+                        value.trim().length >= 2 ||
+                        "Name must be at least 2 characters.",
                     })}
                   />
                 </div>
@@ -388,7 +454,7 @@ const UserRegister = () => {
                     {...register("email", {
                       required: "Email address is required.",
                       pattern: {
-                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                        value: EMAIL_REGEX,
                         message: "Please enter a valid email address.",
                       },
                     })}
@@ -429,8 +495,10 @@ const UserRegister = () => {
                     }`}
                     {...register("phone", {
                       required: "Phone number is required.",
+                      setValueAs: (value) =>
+                        typeof value === "string" ? value.trim() : "",
                       pattern: {
-                        value: /^01[3-9]\d{8}$/,
+                        value: PHONE_REGEX,
                         message: "Enter a valid Bangladeshi phone number.",
                       },
                     })}
