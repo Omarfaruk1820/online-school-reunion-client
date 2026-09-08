@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
+
 import {
   FiArrowRight,
   FiEye,
@@ -10,17 +11,31 @@ import {
   FiPhone,
   FiUser,
 } from "react-icons/fi";
+
 import { FcGoogle } from "react-icons/fc";
 import toast from "react-hot-toast";
 
 import useAuth from "../hooks/useAuth";
 
+// ============================================================
+// CONSTANTS
+// ============================================================
+
 const PHONE_REGEX = /^01[3-9]\d{8}$/;
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ============================================================
+// COMPONENT
+// ============================================================
 
 const UserRegister = () => {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // ==========================================================
+  // AUTH
+  // ==========================================================
 
   const {
     usersignup,
@@ -29,10 +44,21 @@ const UserRegister = () => {
     loading: authLoading,
   } = useAuth();
 
+  // ==========================================================
+  // LOCAL STATE
+  // ==========================================================
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   const [error, setError] = useState("");
+
+  // ==========================================================
+  // FORM
+  // ==========================================================
 
   const {
     register,
@@ -42,6 +68,7 @@ const UserRegister = () => {
     formState: { errors },
   } = useForm({
     mode: "onChange",
+
     defaultValues: {
       name: "",
       email: "",
@@ -54,41 +81,59 @@ const UserRegister = () => {
 
   const password = watch("password");
 
-  /*
-   * Redirect authenticated users who directly visit
-   * the registration page.
-   *
-   * During an active registration request, local loading
-   * prevents this redirect from interfering with registration.
-   */
-  useEffect(() => {
-    if (authLoading || loading || !user) {
-      return;
-    }
+  // ==========================================================
+  // COMMON LOADING STATE
+  // ==========================================================
 
-    const redirectPath = location.state?.from?.pathname || "/";
+  const isSubmitting = loading || googleLoading;
 
-    navigate(redirectPath, {
-      replace: true,
-    });
-  }, [authLoading, loading, user, navigate, location.state]);
+  // ==========================================================
+  // REDIRECT PATH
+  // ==========================================================
 
-  /*
-   * Get the path where the user should be redirected
-   * after successful registration.
-   */
   const getRedirectPath = () => {
     return location.state?.from?.pathname || "/";
   };
 
-  /*
-   * Convert different Firebase/Axios errors into
-   * user-friendly messages.
-   */
+  // ==========================================================
+  // REDIRECT AUTHENTICATED USER
+  // ==========================================================
+
+  useEffect(() => {
+    /*
+     * Do not redirect while:
+     *
+     * 1. Firebase is checking the current session.
+     * 2. Email registration is running.
+     * 3. Google authentication is running.
+     */
+    if (authLoading || isSubmitting || !user) {
+      return;
+    }
+
+    const redirectPath = getRedirectPath();
+
+    navigate(redirectPath, {
+      replace: true,
+    });
+  }, [authLoading, isSubmitting, user, navigate, location.state]);
+
+  // ==========================================================
+  // ERROR MESSAGE HELPER
+  // ==========================================================
+
   const getRegistrationErrorMessage = (err) => {
+    // --------------------------------------------------------
+    // Backend / Axios error
+    // --------------------------------------------------------
+
     if (err?.response?.data?.message) {
       return err.response.data.message;
     }
+
+    // --------------------------------------------------------
+    // Firebase errors
+    // --------------------------------------------------------
 
     switch (err?.code) {
       case "auth/email-already-in-use":
@@ -129,11 +174,12 @@ const UserRegister = () => {
     }
   };
 
-  /*
-   * Email/password registration
-   */
+  // ==========================================================
+  // EMAIL / PASSWORD REGISTRATION
+  // ==========================================================
+
   const handleRegister = async (data) => {
-    if (loading) {
+    if (isSubmitting) {
       return;
     }
 
@@ -141,14 +187,22 @@ const UserRegister = () => {
     setError("");
 
     try {
-      const cleanName = data.name.trim();
-      const cleanEmail = data.email.trim().toLowerCase();
-      const cleanPhone = data.phone.trim();
+      // ------------------------------------------------------
+      // CLEAN VALUES
+      // ------------------------------------------------------
 
-      /*
-       * Extra client-side validation.
-       * Server-side validation remains the final authority.
-       */
+      const cleanName = typeof data.name === "string" ? data.name.trim() : "";
+
+      const cleanEmail =
+        typeof data.email === "string" ? data.email.trim().toLowerCase() : "";
+
+      const cleanPhone =
+        typeof data.phone === "string" ? data.phone.trim() : "";
+
+      // ------------------------------------------------------
+      // NAME VALIDATION
+      // ------------------------------------------------------
+
       if (!cleanName) {
         throw new Error("Full name is required.");
       }
@@ -161,13 +215,23 @@ const UserRegister = () => {
         throw new Error("Name cannot exceed 100 characters.");
       }
 
+      // ------------------------------------------------------
+      // EMAIL VALIDATION
+      // ------------------------------------------------------
+
       if (!EMAIL_REGEX.test(cleanEmail)) {
         throw new Error("Please enter a valid email address.");
       }
 
+      // ------------------------------------------------------
+      // PHONE VALIDATION
+      // ------------------------------------------------------
+
       /*
        * IMPORTANT:
-       * Never send null or empty phone to AuthProvider/server.
+       *
+       * Email/password registration requires
+       * a real phone number.
        */
       if (!cleanPhone) {
         throw new Error("Phone number is required.");
@@ -177,22 +241,60 @@ const UserRegister = () => {
         throw new Error("Enter a valid Bangladeshi phone number.");
       }
 
+      // ------------------------------------------------------
+      // PASSWORD VALIDATION
+      // ------------------------------------------------------
+
+      if (!data.password) {
+        throw new Error("Password is required.");
+      }
+
+      if (data.password.length < 6) {
+        throw new Error("Password must be at least 6 characters.");
+      }
+
+      // ------------------------------------------------------
+      // CONFIRM PASSWORD
+      // ------------------------------------------------------
+
+      if (data.password !== data.confirmPassword) {
+        throw new Error("Passwords do not match.");
+      }
+
+      // ------------------------------------------------------
+      // TERMS
+      // ------------------------------------------------------
+
+      if (!data.agreeToTerms) {
+        throw new Error("You must agree to the Terms & Conditions.");
+      }
+
+      // ------------------------------------------------------
+      // USER INFO
+      // ------------------------------------------------------
+
       /*
-       * Only send the fields required by AuthProvider
+       * Only send fields required by AuthProvider
        * and POST /api/users.
        *
-       * phone is always a real string here.
+       * Phone is guaranteed to be a real
+       * valid string here.
        */
       const userInfo = {
         name: cleanName,
         phone: cleanPhone,
       };
 
+      // ------------------------------------------------------
+      // FIREBASE + MONGODB REGISTRATION
+      // ------------------------------------------------------
+
       await usersignup(cleanEmail, data.password, userInfo);
 
-      /*
-       * Registration succeeded.
-       */
+      // ------------------------------------------------------
+      // SUCCESS
+      // ------------------------------------------------------
+
       toast.success(`${cleanName}, registration successful!`);
 
       const redirectPath = getRedirectPath();
@@ -206,59 +308,119 @@ const UserRegister = () => {
       const errorMessage = getRegistrationErrorMessage(err);
 
       setError(errorMessage);
+
       toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  /*
-   * Google registration / authentication
-   *
-   * The phone entered in the registration form is passed
-   * to AuthProvider.
-   *
-   * For a NEW Google user:
-   * phone is required by the backend.
-   *
-   * For an EXISTING Google user:
-   * AuthProvider can use the existing MongoDB record.
-   */
+  // ==========================================================
+  // GOOGLE REGISTRATION / LOGIN
+  // ==========================================================
+
   const handleGoogleRegister = async () => {
-    if (loading) {
+    if (isSubmitting) {
       return;
     }
 
-    setLoading(true);
+    setGoogleLoading(true);
     setError("");
 
     try {
+      // ------------------------------------------------------
+      // TERMS VALIDATION
+      // ------------------------------------------------------
+
       const formValues = getValues();
 
-      const cleanName = formValues.name?.trim() || "";
-      const cleanPhone = formValues.phone?.trim() || "";
+      if (!formValues.agreeToTerms) {
+        throw new Error(
+          "You must agree to the Terms & Conditions before continuing with Google.",
+        );
+      }
+
+      // ------------------------------------------------------
+      // OPTIONAL NAME
+      // ------------------------------------------------------
+
+      const cleanName =
+        typeof formValues.name === "string" ? formValues.name.trim() : "";
+
+      // ------------------------------------------------------
+      // OPTIONAL PHONE
+      // ------------------------------------------------------
+
+      const cleanPhone =
+        typeof formValues.phone === "string" ? formValues.phone.trim() : "";
 
       /*
-       * Do not send null.
+       * IMPORTANT:
        *
-       * If the field is empty, send an empty string.
-       * AuthProvider can determine whether an existing
-       * Google user already exists or a new phone is required.
+       * Google phone is OPTIONAL.
+       *
+       * Empty phone:
+       *     allowed
+       *
+       * Phone provided:
+       *     must be valid
        */
-      const googleAdditionalData = {
-        name: cleanName,
-        phone: cleanPhone,
-      };
+      if (cleanPhone && !PHONE_REGEX.test(cleanPhone)) {
+        throw new Error("Enter a valid Bangladeshi phone number.");
+      }
+
+      // ------------------------------------------------------
+      // GOOGLE ADDITIONAL DATA
+      // ------------------------------------------------------
+
+      /*
+       * Do not send:
+       *
+       * phone: null
+       * phone: undefined
+       *
+       * when no phone was entered.
+       *
+       * AuthProvider will send the phone only
+       * when an actual value exists.
+       *
+       * For a new Google user without phone,
+       * backend creates:
+       *
+       * phone: null
+       */
+      const googleAdditionalData = {};
+
+      if (cleanName) {
+        googleAdditionalData.name = cleanName;
+      }
+
+      if (cleanPhone) {
+        googleAdditionalData.phone = cleanPhone;
+      }
+
+      // ------------------------------------------------------
+      // GOOGLE AUTHENTICATION
+      // ------------------------------------------------------
 
       const googleUser = await signInWithGoogle(googleAdditionalData);
 
+      // ------------------------------------------------------
+      // SUCCESS NAME
+      // ------------------------------------------------------
+
       const googleName =
-        googleUser?.displayName?.trim() ||
-        cleanName ||
-        user?.displayName?.trim() ||
-        "School Member";
+        googleUser?.displayName?.trim() || cleanName || "School Member";
+
+      // ------------------------------------------------------
+      // SUCCESS TOAST
+      // ------------------------------------------------------
 
       toast.success(`${googleName}, registration successful!`);
+
+      // ------------------------------------------------------
+      // REDIRECT
+      // ------------------------------------------------------
 
       const redirectPath = getRedirectPath();
 
@@ -271,15 +433,17 @@ const UserRegister = () => {
       const errorMessage = getRegistrationErrorMessage(err);
 
       setError(errorMessage);
+
       toast.error(errorMessage);
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
-  /*
-   * Initial authentication loading state
-   */
+  // ==========================================================
+  // AUTH CHECK LOADING
+  // ==========================================================
+
   if (authLoading && !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -294,11 +458,18 @@ const UserRegister = () => {
     );
   }
 
+  // ==========================================================
+  // UI
+  // ==========================================================
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
         <div className="w-full max-w-md">
-          {/* Brand */}
+          {/* ==================================================
+              BRAND
+          ================================================== */}
+
           <div className="mb-7 text-center">
             <Link
               to="/"
@@ -319,9 +490,15 @@ const UserRegister = () => {
             </Link>
           </div>
 
-          {/* Registration Card */}
+          {/* ==================================================
+              REGISTRATION CARD
+          ================================================== */}
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-            {/* Header */}
+            {/* =================================================
+                HEADER
+            ================================================= */}
+
             <div className="mb-7">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">
                 Create your account
@@ -332,7 +509,10 @@ const UserRegister = () => {
               </p>
             </div>
 
-            {/* Error Message */}
+            {/* =================================================
+                ERROR MESSAGE
+            ================================================= */}
+
             {error && (
               <div
                 className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
@@ -343,28 +523,39 @@ const UserRegister = () => {
               </div>
             )}
 
-            {/* Google Registration */}
+            {/* =================================================
+                GOOGLE REGISTRATION
+            ================================================= */}
+
             <button
               type="button"
               onClick={handleGoogleRegister}
-              disabled={loading}
+              disabled={isSubmitting}
               className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition duration-200 hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? (
+              {googleLoading ? (
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
               ) : (
                 <FcGoogle className="text-xl" />
               )}
 
-              <span>{loading ? "Please wait..." : "Continue with Google"}</span>
+              <span>
+                {googleLoading ? "Connecting..." : "Continue with Google"}
+              </span>
             </button>
 
-            {/* Google helper */}
+            {/* =================================================
+                GOOGLE HELPER
+            ================================================= */}
+
             <p className="mt-2 text-center text-xs text-slate-400">
-              For a new Google account, a valid phone number is required.
+              Phone number is optional for Google sign-in.
             </p>
 
-            {/* Divider */}
+            {/* =================================================
+                DIVIDER
+            ================================================= */}
+
             <div className="my-6 flex items-center gap-4">
               <div className="h-px flex-1 bg-slate-200" />
 
@@ -375,13 +566,19 @@ const UserRegister = () => {
               <div className="h-px flex-1 bg-slate-200" />
             </div>
 
-            {/* Registration Form */}
+            {/* =================================================
+                REGISTRATION FORM
+            ================================================= */}
+
             <form
               onSubmit={handleSubmit(handleRegister)}
               className="space-y-5"
               noValidate
             >
-              {/* Full Name */}
+              {/* =================================================
+                  FULL NAME
+              ================================================= */}
+
               <div>
                 <label
                   htmlFor="name"
@@ -398,7 +595,7 @@ const UserRegister = () => {
                     type="text"
                     autoComplete="name"
                     placeholder="Enter your full name"
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className={`w-full rounded-xl border bg-white px-4 py-3 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 ${
                       errors.name
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100"
@@ -406,14 +603,17 @@ const UserRegister = () => {
                     }`}
                     {...register("name", {
                       required: "Full name is required.",
+
                       minLength: {
                         value: 2,
                         message: "Name must be at least 2 characters.",
                       },
+
                       maxLength: {
                         value: 100,
                         message: "Name cannot exceed 100 characters.",
                       },
+
                       validate: (value) =>
                         value.trim().length >= 2 ||
                         "Name must be at least 2 characters.",
@@ -428,7 +628,10 @@ const UserRegister = () => {
                 )}
               </div>
 
-              {/* Email */}
+              {/* =================================================
+                  EMAIL
+              ================================================= */}
+
               <div>
                 <label
                   htmlFor="email"
@@ -445,7 +648,7 @@ const UserRegister = () => {
                     type="email"
                     autoComplete="email"
                     placeholder="you@example.com"
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className={`w-full rounded-xl border bg-white px-4 py-3 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 ${
                       errors.email
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100"
@@ -453,6 +656,7 @@ const UserRegister = () => {
                     }`}
                     {...register("email", {
                       required: "Email address is required.",
+
                       pattern: {
                         value: EMAIL_REGEX,
                         message: "Please enter a valid email address.",
@@ -468,7 +672,10 @@ const UserRegister = () => {
                 )}
               </div>
 
-              {/* Phone */}
+              {/* =================================================
+                  PHONE
+              ================================================= */}
+
               <div>
                 <label
                   htmlFor="phone"
@@ -487,7 +694,7 @@ const UserRegister = () => {
                     autoComplete="tel"
                     placeholder="01XXXXXXXXX"
                     maxLength={11}
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className={`w-full rounded-xl border bg-white px-4 py-3 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 ${
                       errors.phone
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100"
@@ -495,8 +702,10 @@ const UserRegister = () => {
                     }`}
                     {...register("phone", {
                       required: "Phone number is required.",
+
                       setValueAs: (value) =>
                         typeof value === "string" ? value.trim() : "",
+
                       pattern: {
                         value: PHONE_REGEX,
                         message: "Enter a valid Bangladeshi phone number.",
@@ -506,7 +715,7 @@ const UserRegister = () => {
                 </div>
 
                 <p className="mt-1.5 text-xs text-slate-400">
-                  Example: 01712345678
+                  Required for email/password registration. Example: 01712345678
                 </p>
 
                 {errors.phone && (
@@ -516,7 +725,10 @@ const UserRegister = () => {
                 )}
               </div>
 
-              {/* Password */}
+              {/* =================================================
+                  PASSWORD
+              ================================================= */}
+
               <div>
                 <label
                   htmlFor="password"
@@ -533,7 +745,7 @@ const UserRegister = () => {
                     type={showPassword ? "text" : "password"}
                     autoComplete="new-password"
                     placeholder="Create a password"
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className={`w-full rounded-xl border bg-white px-4 py-3 pl-10 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 ${
                       errors.password
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100"
@@ -541,6 +753,7 @@ const UserRegister = () => {
                     }`}
                     {...register("password", {
                       required: "Password is required.",
+
                       minLength: {
                         value: 6,
                         message: "Password must be at least 6 characters.",
@@ -551,7 +764,7 @@ const UserRegister = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword((previous) => !previous)}
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600 disabled:cursor-not-allowed"
                     aria-label={
                       showPassword ? "Hide password" : "Show password"
@@ -568,7 +781,10 @@ const UserRegister = () => {
                 )}
               </div>
 
-              {/* Confirm Password */}
+              {/* =================================================
+                  CONFIRM PASSWORD
+              ================================================= */}
+
               <div>
                 <label
                   htmlFor="confirmPassword"
@@ -585,7 +801,7 @@ const UserRegister = () => {
                     type={showConfirmPassword ? "text" : "password"}
                     autoComplete="new-password"
                     placeholder="Confirm your password"
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className={`w-full rounded-xl border bg-white px-4 py-3 pl-10 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 ${
                       errors.confirmPassword
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100"
@@ -593,6 +809,7 @@ const UserRegister = () => {
                     }`}
                     {...register("confirmPassword", {
                       required: "Please confirm your password.",
+
                       validate: (value) =>
                         value === password || "Passwords do not match.",
                     })}
@@ -603,7 +820,7 @@ const UserRegister = () => {
                     onClick={() =>
                       setShowConfirmPassword((previous) => !previous)
                     }
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600 disabled:cursor-not-allowed"
                     aria-label={
                       showConfirmPassword
@@ -622,12 +839,15 @@ const UserRegister = () => {
                 )}
               </div>
 
-              {/* Terms */}
+              {/* =================================================
+                  TERMS
+              ================================================= */}
+
               <div>
                 <label className="flex cursor-pointer items-start gap-2.5">
                   <input
                     type="checkbox"
-                    disabled={loading}
+                    disabled={isSubmitting}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
                     {...register("agreeToTerms", {
                       required: "You must agree to the terms.",
@@ -653,10 +873,13 @@ const UserRegister = () => {
                 )}
               </div>
 
-              {/* Register Button */}
+              {/* =================================================
+                  REGISTER BUTTON
+              ================================================= */}
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={isSubmitting}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition duration-200 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? (
@@ -673,7 +896,10 @@ const UserRegister = () => {
               </button>
             </form>
 
-            {/* Login */}
+            {/* =================================================
+                LOGIN
+            ================================================= */}
+
             <div className="mt-6 text-center">
               <p className="text-sm text-slate-500">
                 Already have an account?{" "}
@@ -687,7 +913,10 @@ const UserRegister = () => {
             </div>
           </div>
 
-          {/* Footer */}
+          {/* ==================================================
+              FOOTER
+          ================================================== */}
+
           <p className="mt-6 text-center text-xs text-slate-400">
             © {new Date().getFullYear()} School Reunion
           </p>
