@@ -21,14 +21,31 @@ const Navbar = () => {
   const [isReunionOpen, setIsReunionOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const userMenuRef = useRef(null);
+  const reunionMenuRef = useRef(null);
 
-  /*
-   * ----------------------------------------
-   * Navigation Classes
-   * ----------------------------------------
-   */
+  /* ----------------------------------------
+     User Data
+  ---------------------------------------- */
+
+  const userName = user?.name?.trim() || user?.displayName?.trim() || "User";
+
+  const userEmail = user?.email?.trim() || "No email";
+
+  const userPhoto = user?.photo?.trim() || user?.photoURL?.trim() || "";
+
+  const userRole = user?.role?.trim()?.toLowerCase() || "student";
+
+  const formattedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1);
+
+  const dashboardPath =
+    userRole === "admin" ? "/dashboard/admin" : "/dashboard/student";
+
+  /* ----------------------------------------
+     Navigation Classes
+  ---------------------------------------- */
 
   const navLinkClass = ({ isActive }) =>
     `relative px-3 py-2 text-sm font-medium transition-colors duration-200 ${
@@ -42,42 +59,32 @@ const Navbar = () => {
         : "text-gray-700 hover:bg-gray-50 hover:text-blue-700"
     }`;
 
-  /*
-   * ----------------------------------------
-   * User Data
-   * ----------------------------------------
-   */
-
-  const userName = user?.name?.trim() || user?.displayName?.trim() || "User";
-
-  const userEmail = user?.email?.trim() || "No email";
-
-  const userPhoto = user?.photo?.trim() || user?.photoURL?.trim() || "";
-
-  const userRole = user?.role?.trim()?.toLowerCase() || "student";
-
-  const formattedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1);
-
-  /*
-   * ----------------------------------------
-   * Close Menus
-   * ----------------------------------------
-   */
+  /* ----------------------------------------
+     Menu Helpers
+  ---------------------------------------- */
 
   const closeMobileMenu = () => {
     setIsMenuOpen(false);
     setIsReunionOpen(false);
   };
 
+  const closeAllMenus = () => {
+    setIsMenuOpen(false);
+    setIsReunionOpen(false);
+    setIsUserMenuOpen(false);
+  };
+
   const closeUserMenu = () => {
     setIsUserMenuOpen(false);
   };
 
-  /*
-   * ----------------------------------------
-   * Logout
-   * ----------------------------------------
-   */
+  const closeReunionMenu = () => {
+    setIsReunionOpen(false);
+  };
+
+  /* ----------------------------------------
+     Logout
+  ---------------------------------------- */
 
   const handleLogout = async () => {
     if (logoutLoading) {
@@ -89,8 +96,7 @@ const Navbar = () => {
 
       await userLogout();
 
-      setIsUserMenuOpen(false);
-      closeMobileMenu();
+      closeAllMenus();
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
@@ -98,31 +104,44 @@ const Navbar = () => {
     }
   };
 
-  /*
-   * ----------------------------------------
-   * Close User Dropdown When Clicking Outside
-   * ----------------------------------------
-   */
+  /* ----------------------------------------
+     Outside Click + Escape
+  ---------------------------------------- */
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setIsUserMenuOpen(false);
       }
+
+      if (
+        reunionMenuRef.current &&
+        !reunionMenuRef.current.contains(event.target)
+      ) {
+        setIsReunionOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsUserMenuOpen(false);
+        setIsReunionOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+
+      document.removeEventListener("keydown", handleEscape);
     };
   }, []);
 
-  /*
-   * ----------------------------------------
-   * Close Menus On Route / Resize
-   * ----------------------------------------
-   */
+  /* ----------------------------------------
+     Close Mobile Menu On Desktop Resize
+  ---------------------------------------- */
 
   useEffect(() => {
     const handleResize = () => {
@@ -138,49 +157,34 @@ const Navbar = () => {
     };
   }, []);
 
-  /*
-   * ----------------------------------------
-   * User Avatar
-   * ----------------------------------------
-   */
+  /* ----------------------------------------
+     User Avatar
+  ---------------------------------------- */
 
   const UserAvatar = ({ mobile = false }) => {
-    if (userPhoto) {
+    const avatarSize = mobile ? "h-10 w-10" : "h-10 w-10";
+
+    if (userPhoto && !imageError) {
       return (
         <img
           src={userPhoto}
           alt={`${userName}'s profile`}
-          className={`rounded-full object-cover ${
-            mobile ? "h-10 w-10" : "h-10 w-10"
-          }`}
+          className={`${avatarSize} shrink-0 rounded-full object-cover`}
           referrerPolicy="no-referrer"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            event.currentTarget.nextElementSibling?.classList.remove("hidden");
-          }}
+          onError={() => setImageError(true)}
         />
       );
     }
 
     return (
       <div
-        className={`flex shrink-0 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700 ${
-          mobile ? "h-10 w-10 text-sm" : "h-10 w-10 text-sm"
-        }`}
+        className={`flex ${avatarSize} shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700`}
         aria-hidden="true"
       >
         {userName.charAt(0).toUpperCase()}
       </div>
     );
   };
-
-  /*
-   * ----------------------------------------
-   * Loading State
-   * ----------------------------------------
-   */
-
-  const authResolved = !loading;
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white shadow-sm">
@@ -216,7 +220,7 @@ const Navbar = () => {
 
           <NavLink
             to="/"
-            onClick={closeMobileMenu}
+            onClick={closeAllMenus}
             className="flex min-w-0 items-center gap-3"
           >
             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm">
@@ -251,15 +255,14 @@ const Navbar = () => {
               About
             </NavLink>
 
-            <NavLink to="/history" className={navLinkClass}>
-              History
-            </NavLink>
-
             {/* Reunion Dropdown */}
-            <div className="relative">
+            <div ref={reunionMenuRef} className="relative">
               <button
                 type="button"
-                onClick={() => setIsReunionOpen((prev) => !prev)}
+                onClick={() => {
+                  setIsReunionOpen((prev) => !prev);
+                  setIsUserMenuOpen(false);
+                }}
                 className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:text-blue-700"
                 aria-expanded={isReunionOpen}
                 aria-haspopup="menu"
@@ -276,7 +279,7 @@ const Navbar = () => {
                 <div className="absolute left-1/2 top-full mt-3 w-56 -translate-x-1/2 rounded-xl border border-gray-100 bg-white p-2 shadow-xl">
                   <NavLink
                     to="/Details"
-                    onClick={() => setIsReunionOpen(false)}
+                    onClick={closeReunionMenu}
                     className="block rounded-lg px-4 py-3 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
                   >
                     Reunion Details
@@ -284,7 +287,7 @@ const Navbar = () => {
 
                   <NavLink
                     to="/EventSchedule"
-                    onClick={() => setIsReunionOpen(false)}
+                    onClick={closeReunionMenu}
                     className="block rounded-lg px-4 py-3 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
                   >
                     Event Schedule
@@ -292,7 +295,7 @@ const Navbar = () => {
 
                   <NavLink
                     to="/reunionregister"
-                    onClick={() => setIsReunionOpen(false)}
+                    onClick={closeReunionMenu}
                     className="block rounded-lg px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
                   >
                     Register for Reunion →
@@ -319,15 +322,15 @@ const Navbar = () => {
           </div>
 
           {/* ==================================
-              Desktop Authentication Area
+              Desktop Authentication
           =================================== */}
 
-          {authResolved && (
+          {!loading && (
             <div className="hidden items-center lg:flex">
               {!user ? (
-                /* -----------------------------
+                /* --------------------------------
                    Logged Out
-                ------------------------------ */
+                --------------------------------- */
 
                 <div className="flex items-center gap-3">
                   <NavLink
@@ -349,19 +352,22 @@ const Navbar = () => {
                   </NavLink>
                 </div>
               ) : (
-                /* -----------------------------
+                /* --------------------------------
                    Logged In
-                ------------------------------ */
+                --------------------------------- */
 
                 <div ref={userMenuRef} className="relative ml-4">
                   <button
                     type="button"
-                    onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                    onClick={() => {
+                      setIsUserMenuOpen((prev) => !prev);
+                      setIsReunionOpen(false);
+                    }}
                     className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-1.5 transition hover:border-blue-200 hover:bg-gray-50"
                     aria-expanded={isUserMenuOpen}
                     aria-haspopup="menu"
                   >
-                    {/* User Photo */}
+                    {/* User Avatar */}
                     <div className="relative">
                       <UserAvatar />
 
@@ -403,7 +409,6 @@ const Navbar = () => {
                               {userEmail}
                             </p>
 
-                            {/* Role */}
                             <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
                               <FiShield className="text-xs" />
 
@@ -413,7 +418,7 @@ const Navbar = () => {
                         </div>
                       </div>
 
-                      {/* User Menu Links */}
+                      {/* User Menu */}
                       <div className="p-2">
                         <NavLink
                           to="/dashboard/profile"
@@ -425,17 +430,15 @@ const Navbar = () => {
                           <span>My Profile</span>
                         </NavLink>
 
-                        {userRole === "admin" && (
-                          <NavLink
-                            to="/dashboard/admin"
-                            onClick={closeUserMenu}
-                            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
-                          >
-                            <FiShield />
+                        <NavLink
+                          to={dashboardPath}
+                          onClick={closeUserMenu}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          <FiShield />
 
-                            <span>Admin Dashboard</span>
-                          </NavLink>
-                        )}
+                          <span>Dashboard</span>
+                        </NavLink>
 
                         <button
                           type="button"
@@ -467,7 +470,10 @@ const Navbar = () => {
 
           <button
             type="button"
-            onClick={() => setIsMenuOpen((prev) => !prev)}
+            onClick={() => {
+              setIsMenuOpen((prev) => !prev);
+              setIsUserMenuOpen(false);
+            }}
             className="rounded-lg p-2 text-2xl text-gray-700 transition hover:bg-gray-100 lg:hidden"
             aria-label={isMenuOpen ? "Close menu" : "Open menu"}
             aria-expanded={isMenuOpen}
@@ -476,15 +482,16 @@ const Navbar = () => {
           </button>
         </div>
 
-        {/* ====================================
+        {/* ======================================
             Mobile Navigation
-        ===================================== */}
+        ======================================= */}
 
         {isMenuOpen && (
           <div className="border-t border-gray-100 bg-white lg:hidden">
             <div className="mx-auto max-w-7xl space-y-1 px-4 py-4 sm:px-6">
               {/* Mobile User Information */}
-              {authResolved && user && (
+
+              {!loading && user && (
                 <div className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
                   <div className="flex items-center gap-3">
                     <UserAvatar mobile />
@@ -509,6 +516,7 @@ const Navbar = () => {
               )}
 
               {/* Home */}
+
               <NavLink
                 to="/"
                 onClick={closeMobileMenu}
@@ -518,6 +526,7 @@ const Navbar = () => {
               </NavLink>
 
               {/* About */}
+
               <NavLink
                 to="/about"
                 onClick={closeMobileMenu}
@@ -526,16 +535,8 @@ const Navbar = () => {
                 About
               </NavLink>
 
-              {/* History */}
-              <NavLink
-                to="/history"
-                onClick={closeMobileMenu}
-                className={mobileLinkClass}
-              >
-                History
-              </NavLink>
+              {/* Reunion */}
 
-              {/* Mobile Reunion */}
               <div>
                 <button
                   type="button"
@@ -582,6 +583,7 @@ const Navbar = () => {
               </div>
 
               {/* Alumni */}
+
               <NavLink
                 to="/AlumniHighlights"
                 onClick={closeMobileMenu}
@@ -591,6 +593,7 @@ const Navbar = () => {
               </NavLink>
 
               {/* Gallery */}
+
               <NavLink
                 to="/GalleryPreview"
                 onClick={closeMobileMenu}
@@ -600,6 +603,7 @@ const Navbar = () => {
               </NavLink>
 
               {/* Sponsors */}
+
               <NavLink
                 to="/sponsors"
                 onClick={closeMobileMenu}
@@ -609,6 +613,7 @@ const Navbar = () => {
               </NavLink>
 
               {/* Contact */}
+
               <NavLink
                 to="/contact"
                 onClick={closeMobileMenu}
@@ -621,10 +626,10 @@ const Navbar = () => {
                   Mobile Authentication
               =================================== */}
 
-              {authResolved && (
-                <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4">
+              {!loading && (
+                <div className="border-t border-gray-100 pt-4">
                   {!user ? (
-                    <>
+                    <div className="grid grid-cols-2 gap-3">
                       <NavLink
                         to="/login"
                         onClick={closeMobileMenu}
@@ -644,9 +649,19 @@ const Navbar = () => {
 
                         <span>Register</span>
                       </NavLink>
-                    </>
+                    </div>
                   ) : (
-                    <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <NavLink
+                        to={dashboardPath}
+                        onClick={closeMobileMenu}
+                        className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        <FiShield />
+
+                        <span>Dashboard</span>
+                      </NavLink>
+
                       <NavLink
                         to="/dashboard/profile"
                         onClick={closeMobileMenu}
@@ -661,7 +676,7 @@ const Navbar = () => {
                         type="button"
                         onClick={handleLogout}
                         disabled={logoutLoading}
-                        className="flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {logoutLoading ? (
                           <span className="h-4 w-4 animate-spin rounded-full border-2 border-red-200 border-t-white" />
@@ -673,7 +688,7 @@ const Navbar = () => {
                           {logoutLoading ? "Logging out..." : "Logout"}
                         </span>
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
               )}
