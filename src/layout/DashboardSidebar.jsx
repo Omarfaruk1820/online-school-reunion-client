@@ -10,6 +10,7 @@ import {
   FiMail,
   FiSettings,
   FiUsers,
+  FiX,
 } from "react-icons/fi";
 
 import { NavLink } from "react-router-dom";
@@ -172,7 +173,7 @@ const studentMenu = [
   },
 ];
 
-const DashboardSidebar = () => {
+const DashboardSidebar = ({ isMobileOpen, onClose }) => {
   const { user, userLogout } = useAuth();
 
   const userRole = user?.role?.trim()?.toLowerCase() || "student";
@@ -190,24 +191,13 @@ const DashboardSidebar = () => {
 
   const formattedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1);
 
-  // Close mobile drawer
-  const closeMobileDrawer = () => {
-    const drawer = document.getElementById("dashboard-drawer");
-
-    if (drawer) {
-      drawer.checked = false;
-    }
-  };
-
-  // Navigation
   const handleNavigation = () => {
-    closeMobileDrawer();
+    onClose?.();
   };
 
-  // Logout
   const handleLogout = async () => {
     try {
-      closeMobileDrawer();
+      onClose?.();
 
       await userLogout();
     } catch (error) {
@@ -215,25 +205,30 @@ const DashboardSidebar = () => {
     }
   };
 
-  // User Avatar
   const UserAvatar = () => {
     if (userPhoto) {
       return (
-        <img
-          src={userPhoto}
-          alt={`${userName}'s profile`}
-          className="h-11 w-11 rounded-full object-cover"
-          referrerPolicy="no-referrer"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
+        <>
+          <img
+            src={userPhoto}
+            alt={`${userName}'s profile`}
+            className="h-11 w-11 rounded-full object-cover"
+            referrerPolicy="no-referrer"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
 
-            const fallback = event.currentTarget.nextElementSibling;
+              const fallback = event.currentTarget.nextElementSibling;
 
-            if (fallback) {
-              fallback.classList.remove("hidden");
-            }
-          }}
-        />
+              if (fallback) {
+                fallback.classList.remove("hidden");
+              }
+            }}
+          />
+
+          <div className="hidden h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-content">
+            <FiUsers className="text-lg" />
+          </div>
+        </>
       );
     }
 
@@ -244,12 +239,13 @@ const DashboardSidebar = () => {
     );
   };
 
-  // Sidebar Content
   const menuContent = (
     <div className="flex h-full min-h-0 flex-col bg-base-100">
-      {/* Sidebar Header */}
+      {/* =========================================
+          HEADER
+      ========================================== */}
 
-      <div className="flex min-h-16 shrink-0 items-center border-b border-base-300 px-4 sm:px-5">
+      <div className="flex min-h-16 shrink-0 items-center justify-between border-b border-base-300 px-4 sm:px-5">
         <div className="min-w-0">
           <h2 className="truncate text-base font-extrabold text-primary sm:text-lg">
             School Reunion
@@ -259,14 +255,25 @@ const DashboardSidebar = () => {
             {isAdmin ? "Admin Panel" : "Student Panel"}
           </p>
         </div>
+
+        {/* Mobile Close Button */}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn btn-ghost btn-circle btn-sm lg:hidden"
+          aria-label="Close dashboard sidebar"
+        >
+          <FiX className="text-xl" />
+        </button>
       </div>
 
-      {/* User Information */}
+      {/* =========================================
+          USER INFORMATION
+      ========================================== */}
 
       <div className="shrink-0 border-b border-base-300 p-3 sm:p-4">
         <div className="flex items-center gap-3 rounded-xl bg-base-200 p-3">
-          {/* Avatar */}
-
           <div className="avatar shrink-0">
             <div className="relative overflow-hidden rounded-full">
               <UserAvatar />
@@ -287,8 +294,6 @@ const DashboardSidebar = () => {
             </div>
           </div>
 
-          {/* User Details */}
-
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{userName}</p>
 
@@ -301,7 +306,9 @@ const DashboardSidebar = () => {
         </div>
       </div>
 
-      {/* Navigation */}
+      {/* =========================================
+          NAVIGATION
+      ========================================== */}
 
       <nav
         className="min-h-0 flex-1 overflow-y-auto p-3"
@@ -346,7 +353,9 @@ const DashboardSidebar = () => {
         </ul>
       </nav>
 
-      {/* Logout */}
+      {/* =========================================
+          LOGOUT
+      ========================================== */}
 
       <div className="shrink-0 border-t border-base-300 p-3">
         <button
@@ -378,9 +387,10 @@ const DashboardSidebar = () => {
 
   return (
     <>
-      {/* ==========================================
+      {/* =========================================
           DESKTOP SIDEBAR
-      =========================================== */}
+          1024px and above
+      ========================================== */}
 
       <aside
         className="
@@ -399,38 +409,29 @@ const DashboardSidebar = () => {
         </div>
       </aside>
 
-      {/* ==========================================
+      {/* =========================================
           MOBILE / TABLET DRAWER
-      =========================================== */}
+          Below 1024px
+      ========================================== */}
 
-      <div className="drawer drawer-start lg:hidden">
-        {/* Drawer Controller */}
-
-        <input
-          id="dashboard-drawer"
-          type="checkbox"
-          className="drawer-toggle"
-        />
-
-        {/* Required DaisyUI drawer content */}
-
-        <div className="drawer-content hidden" />
-
-        {/* Drawer Side */}
-
-        <div className="drawer-side z-[60]">
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-[100] lg:hidden">
           {/* Overlay */}
 
-          <label
-            htmlFor="dashboard-drawer"
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute inset-0 h-full w-full cursor-default bg-black/50"
             aria-label="Close dashboard sidebar"
-            className="drawer-overlay"
           />
 
-          {/* Mobile Sidebar */}
+          {/* Drawer */}
 
           <aside
             className="
+              absolute
+              left-0
+              top-0
               h-full
               w-[min(82vw,18rem)]
               max-w-[18rem]
@@ -442,7 +443,7 @@ const DashboardSidebar = () => {
             {menuContent}
           </aside>
         </div>
-      </div>
+      )}
     </>
   );
 };

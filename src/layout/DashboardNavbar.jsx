@@ -13,18 +13,20 @@ import { NavLink } from "react-router-dom";
 
 import useAuth from "../hooks/useAuth";
 
-const DashboardNavbar = () => {
+const DashboardNavbar = ({ onMenuClick }) => {
   const { user, userLogout } = useAuth();
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
   const [logoutLoading, setLogoutLoading] = useState(false);
+
   const [imageError, setImageError] = useState(false);
 
   const userMenuRef = useRef(null);
 
-  /* ----------------------------------------
-     User Information
-  ---------------------------------------- */
+  /* =========================================
+     USER INFORMATION
+  ========================================== */
 
   const userName =
     user?.name?.trim() || user?.displayName?.trim() || "School Member";
@@ -47,28 +49,25 @@ const DashboardNavbar = () => {
     ? "/dashboard/admin/settings"
     : "/dashboard/settings";
 
-  /* ----------------------------------------
-     Close User Menu
-  ---------------------------------------- */
+  /* =========================================
+     CLOSE USER MENU
+  ========================================== */
 
   const closeUserMenu = () => {
     setIsUserMenuOpen(false);
   };
 
-  /* ----------------------------------------
-     Open Mobile Sidebar
-  ---------------------------------------- */
-  const openMobileSidebar = () => {
-    const drawer = document.getElementById("dashboard-drawer");
+  /* =========================================
+     MOBILE MENU
+  ========================================== */
 
-    if (drawer) {
-      drawer.checked = true;
-    }
+  const openMobileSidebar = () => {
+    onMenuClick?.();
   };
 
-  /* ----------------------------------------
-     Logout
-  ---------------------------------------- */
+  /* =========================================
+     LOGOUT
+  ========================================== */
 
   const handleLogout = async () => {
     if (logoutLoading) {
@@ -88,9 +87,9 @@ const DashboardNavbar = () => {
     }
   };
 
-  /* ----------------------------------------
-     Outside Click + Escape
-  ---------------------------------------- */
+  /* =========================================
+     OUTSIDE CLICK + ESCAPE
+  ========================================== */
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -116,17 +115,17 @@ const DashboardNavbar = () => {
     };
   }, []);
 
-  /* ----------------------------------------
-     Reset Image Error
-  ---------------------------------------- */
+  /* =========================================
+     RESET IMAGE ERROR
+  ========================================== */
 
   useEffect(() => {
     setImageError(false);
   }, [userPhoto]);
 
-  /* ----------------------------------------
-     User Avatar
-  ---------------------------------------- */
+  /* =========================================
+     USER AVATAR
+  ========================================== */
 
   const UserAvatar = ({ size = "normal" }) => {
     const avatarSize = size === "small" ? "h-8 w-8" : "h-9 w-9 sm:h-10 sm:w-10";
@@ -155,24 +154,54 @@ const DashboardNavbar = () => {
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-base-300 bg-base-100/95 backdrop-blur">
-      <div className="flex h-16 w-full items-center gap-2 px-3 sm:px-5 lg:px-6 xl:px-8">
-        {/* ========================================
-            Mobile Menu Button
-        ========================================= */}
+    <header
+      className="
+        sticky
+        top-0
+        z-40
+        w-full
+        border-b
+        border-base-300
+        bg-base-100/95
+        backdrop-blur
+      "
+    >
+      <div
+        className="
+          flex
+          h-16
+          w-full
+          items-center
+          gap-2
+          px-3
+          sm:px-5
+          lg:px-6
+          xl:px-8
+        "
+      >
+        {/* =====================================
+            HAMBURGER BUTTON
+            Visible ALL screen sizes
+        ====================================== */}
 
         <button
           type="button"
           onClick={openMobileSidebar}
-          className="btn btn-ghost btn-square flex shrink-0 lg:hidden"
+          className="
+            btn
+            btn-ghost
+            btn-square
+            shrink-0
+          "
           aria-label="Open dashboard menu"
+          title="Open dashboard menu"
         >
           <FiMenu className="text-xl sm:text-2xl" />
         </button>
 
-        {/* ========================================
-            Dashboard Brand
-        ========================================= */}
+        {/* =====================================
+            BRAND
+        ====================================== */}
 
         <div className="min-w-0 shrink">
           <h1 className="truncate text-base font-bold text-base-content sm:text-lg">
@@ -184,14 +213,12 @@ const DashboardNavbar = () => {
           </p>
         </div>
 
-        {/* ========================================
-            Right Side
-        ========================================= */}
+        {/* =====================================
+            RIGHT SIDE
+        ====================================== */}
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-          {/* ----------------------------------------
-              Notification Button
-          ---------------------------------------- */}
+          {/* Notification */}
 
           <button
             type="button"
@@ -202,17 +229,25 @@ const DashboardNavbar = () => {
             <FiBell className="text-lg sm:text-xl" />
           </button>
 
-          {/* ----------------------------------------
-              User Menu
-          ---------------------------------------- */}
+          {/* User Menu */}
 
           <div ref={userMenuRef} className="relative">
-            {/* User Button */}
-
             <button
               type="button"
               onClick={() => setIsUserMenuOpen((previous) => !previous)}
-              className="flex items-center gap-1.5 rounded-xl px-1 py-1.5 transition-colors duration-200 hover:bg-base-200 sm:gap-3 sm:px-2"
+              className="
+                flex
+                items-center
+                gap-1.5
+                rounded-xl
+                px-1
+                py-1.5
+                transition-colors
+                duration-200
+                hover:bg-base-200
+                sm:gap-3
+                sm:px-2
+              "
               aria-expanded={isUserMenuOpen}
               aria-haspopup="menu"
               aria-label="Open user menu"
@@ -222,12 +257,18 @@ const DashboardNavbar = () => {
 
               <div className="relative shrink-0">
                 <div className="avatar">
-                  <div className="rounded-full ring-2 ring-primary ring-offset-2 ring-offset-base-100">
+                  <div
+                    className="
+                      rounded-full
+                      ring-2
+                      ring-primary
+                      ring-offset-2
+                      ring-offset-base-100
+                    "
+                  >
                     <UserAvatar />
                   </div>
                 </div>
-
-                {/* Online Status */}
 
                 <span
                   className="
@@ -256,7 +297,7 @@ const DashboardNavbar = () => {
                 </p>
               </div>
 
-              {/* Dropdown Arrow */}
+              {/* Arrow */}
 
               <FiChevronDown
                 className={`
@@ -271,9 +312,9 @@ const DashboardNavbar = () => {
               />
             </button>
 
-            {/* ========================================
-                User Dropdown
-            ========================================= */}
+            {/* =================================
+                USER DROPDOWN
+            ================================== */}
 
             {isUserMenuOpen && (
               <div
@@ -295,9 +336,7 @@ const DashboardNavbar = () => {
                 "
                 role="menu"
               >
-                {/* ------------------------------------
-                    User Header
-                ------------------------------------- */}
+                {/* Header */}
 
                 <div className="border-b border-base-300 bg-base-200/70 p-4">
                   <div className="flex items-center gap-3">
@@ -319,32 +358,28 @@ const DashboardNavbar = () => {
                   </div>
                 </div>
 
-                {/* ------------------------------------
-                    Menu Links
-                ------------------------------------- */}
+                {/* Links */}
 
                 <div className="p-2">
-                  {/* Dashboard */}
-
                   <NavLink
                     to={dashboardPath}
                     onClick={closeUserMenu}
                     className={({ isActive }) =>
                       `
-                      flex
-                      items-center
-                      gap-3
-                      rounded-xl
-                      px-3
-                      py-2.5
-                      text-sm
-                      font-medium
-                      transition-colors
-                      ${
-                        isActive
-                          ? "bg-primary text-primary-content"
-                          : "hover:bg-base-200"
-                      }
+                        flex
+                        items-center
+                        gap-3
+                        rounded-xl
+                        px-3
+                        py-2.5
+                        text-sm
+                        font-medium
+                        transition-colors
+                        ${
+                          isActive
+                            ? "bg-primary text-primary-content"
+                            : "hover:bg-base-200"
+                        }
                       `
                     }
                     role="menuitem"
@@ -354,27 +389,25 @@ const DashboardNavbar = () => {
                     <span>Dashboard</span>
                   </NavLink>
 
-                  {/* My Profile */}
-
                   <NavLink
                     to={profilePath}
                     onClick={closeUserMenu}
                     className={({ isActive }) =>
                       `
-                      flex
-                      items-center
-                      gap-3
-                      rounded-xl
-                      px-3
-                      py-2.5
-                      text-sm
-                      font-medium
-                      transition-colors
-                      ${
-                        isActive
-                          ? "bg-primary text-primary-content"
-                          : "hover:bg-base-200"
-                      }
+                        flex
+                        items-center
+                        gap-3
+                        rounded-xl
+                        px-3
+                        py-2.5
+                        text-sm
+                        font-medium
+                        transition-colors
+                        ${
+                          isActive
+                            ? "bg-primary text-primary-content"
+                            : "hover:bg-base-200"
+                        }
                       `
                     }
                     role="menuitem"
@@ -384,27 +417,25 @@ const DashboardNavbar = () => {
                     <span>My Profile</span>
                   </NavLink>
 
-                  {/* Settings */}
-
                   <NavLink
                     to={settingsPath}
                     onClick={closeUserMenu}
                     className={({ isActive }) =>
                       `
-                      flex
-                      items-center
-                      gap-3
-                      rounded-xl
-                      px-3
-                      py-2.5
-                      text-sm
-                      font-medium
-                      transition-colors
-                      ${
-                        isActive
-                          ? "bg-primary text-primary-content"
-                          : "hover:bg-base-200"
-                      }
+                        flex
+                        items-center
+                        gap-3
+                        rounded-xl
+                        px-3
+                        py-2.5
+                        text-sm
+                        font-medium
+                        transition-colors
+                        ${
+                          isActive
+                            ? "bg-primary text-primary-content"
+                            : "hover:bg-base-200"
+                        }
                       `
                     }
                     role="menuitem"
@@ -414,11 +445,7 @@ const DashboardNavbar = () => {
                     <span>Settings</span>
                   </NavLink>
 
-                  {/* Divider */}
-
                   <div className="my-1 border-t border-base-300" />
-
-                  {/* Logout */}
 
                   <button
                     type="button"
