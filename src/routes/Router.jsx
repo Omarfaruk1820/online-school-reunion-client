@@ -26,6 +26,8 @@ import StudentRoute from "../routes/StudentRoute";
 // Dashboard Pages
 import AdminDashboard from "../dashboard/Admin/AdminDashBoard";
 import StudentDashboard from "../dashboard/User/StudentDashboard";
+import Profile from "../dashboard/User/profile";
+import Registrations from "../dashboard/User/Registrations";
 
 const router = createBrowserRouter([
   {
@@ -118,6 +120,22 @@ const router = createBrowserRouter([
         element: (
           <StudentRoute>
             <StudentDashboard />
+          </StudentRoute>
+        ),
+      },
+      {
+        path: "/dashboard/profile",
+        element: (
+          <StudentRoute>
+            <Profile />
+          </StudentRoute>
+        ),
+      },
+      {
+        path: "/dashboard/registrations",
+        element: (
+          <StudentRoute>
+            <Registrations></Registrations>
           </StudentRoute>
         ),
       },

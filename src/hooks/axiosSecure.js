@@ -3,7 +3,6 @@ import { auth } from "../Auth/firebase.config";
 
 const axiosSecure = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
-
   timeout: 15000,
 });
 
@@ -20,6 +19,8 @@ axiosSecure.interceptors.request.use(
         const idToken = await currentUser.getIdToken(false);
 
         if (idToken) {
+          config.headers = config.headers || {};
+
           config.headers.Authorization = `Bearer ${idToken}`;
         }
       }
@@ -27,10 +28,10 @@ axiosSecure.interceptors.request.use(
       return config;
     } catch (error) {
       console.error("Firebase token error:", error);
+
       return Promise.reject(error);
     }
   },
-
   (error) => Promise.reject(error),
 );
 
@@ -43,6 +44,10 @@ axiosSecure.interceptors.response.use(
 
   async (error) => {
     const originalRequest = error.config;
+
+    // --------------------------------------------------------
+    // 401 → Refresh Firebase ID Token → Retry once
+    // --------------------------------------------------------
 
     if (
       error.response?.status === 401 &&
@@ -60,6 +65,8 @@ axiosSecure.interceptors.response.use(
 
         const refreshedToken = await currentUser.getIdToken(true);
 
+        originalRequest.headers = originalRequest.headers || {};
+
         originalRequest.headers.Authorization = `Bearer ${refreshedToken}`;
 
         return axiosSecure(originalRequest);
@@ -69,6 +76,10 @@ axiosSecure.interceptors.response.use(
         return Promise.reject(refreshError);
       }
     }
+
+    // --------------------------------------------------------
+    // 403 → Forbidden
+    // --------------------------------------------------------
 
     if (error.response?.status === 403) {
       console.warn("Forbidden: user does not have permission.");
