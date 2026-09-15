@@ -22,7 +22,7 @@ import {
   FiUser,
   FiUsers,
 } from "react-icons/fi";
-import onAuthStateChanged  from "firebase/auth";
+
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -290,25 +290,23 @@ const ReunionRegister = () => {
   // ==========================================================
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        return;
-      }
+    const currentUser = auth.currentUser;
 
-      if (currentUser.email) {
-        setValue("email", currentUser.email, {
-          shouldValidate: true,
-        });
-      }
+    if (!currentUser) {
+      return;
+    }
 
-      if (currentUser.displayName) {
-        setValue("name", currentUser.displayName, {
-          shouldValidate: true,
-        });
-      }
-    });
+    if (currentUser.email) {
+      setValue("email", currentUser.email, {
+        shouldValidate: true,
+      });
+    }
 
-    return () => unsubscribe();
+    if (currentUser.displayName) {
+      setValue("name", currentUser.displayName, {
+        shouldValidate: true,
+      });
+    }
   }, [setValue]);
 
   // ==========================================================
