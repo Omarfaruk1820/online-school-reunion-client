@@ -3,7 +3,10 @@ import { auth } from "../Auth/firebase.config";
 
 const axiosSecure = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+
   timeout: 15000,
+
+  withCredentials: true,
 });
 
 // ============================================================
@@ -15,12 +18,17 @@ axiosSecure.interceptors.request.use(
     try {
       const currentUser = auth.currentUser;
 
-      if (currentUser) {
-        const idToken = await currentUser.getIdToken(false);
+      if (!currentUser) {
+        return config;
+      }
 
-        if (idToken) {
+      const idToken = await currentUser.getIdToken(false);
+
+      if (idToken) {
+        if (config.headers?.set) {
+          config.headers.set("Authorization", `Bearer ${idToken}`);
+        } else {
           config.headers = config.headers || {};
-
           config.headers.Authorization = `Bearer ${idToken}`;
         }
       }
@@ -32,6 +40,7 @@ axiosSecure.interceptors.request.use(
       return Promise.reject(error);
     }
   },
+
   (error) => Promise.reject(error),
 );
 
@@ -45,9 +54,9 @@ axiosSecure.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // --------------------------------------------------------
-    // 401 → Refresh Firebase ID Token → Retry once
-    // --------------------------------------------------------
+    // ========================================================
+    // 401 → REFRESH TOKEN → RETRY ONCE
+    // ========================================================
 
     if (
       error.response?.status === 401 &&
@@ -65,9 +74,16 @@ axiosSecure.interceptors.response.use(
 
         const refreshedToken = await currentUser.getIdToken(true);
 
-        originalRequest.headers = originalRequest.headers || {};
+        if (originalRequest.headers?.set) {
+          originalRequest.headers.set(
+            "Authorization",
+            `Bearer ${refreshedToken}`,
+          );
+        } else {
+          originalRequest.headers = originalRequest.headers || {};
 
-        originalRequest.headers.Authorization = `Bearer ${refreshedToken}`;
+          originalRequest.headers.Authorization = `Bearer ${refreshedToken}`;
+        }
 
         return axiosSecure(originalRequest);
       } catch (refreshError) {
@@ -77,9 +93,9 @@ axiosSecure.interceptors.response.use(
       }
     }
 
-    // --------------------------------------------------------
-    // 403 → Forbidden
-    // --------------------------------------------------------
+    // ========================================================
+    // 403 → FORBIDDEN
+    // ========================================================
 
     if (error.response?.status === 403) {
       console.warn("Forbidden: user does not have permission.");
