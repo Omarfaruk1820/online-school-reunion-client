@@ -5,6 +5,7 @@ import {
   FiArrowLeft,
   FiArrowRight,
   FiCalendar,
+  FiCheck,
   FiCheckCircle,
   FiChevronDown,
   FiClock,
@@ -13,6 +14,7 @@ import {
   FiMail,
   FiMapPin,
   FiPhone,
+  FiShield,
   FiUser,
   FiUsers,
   FiXCircle,
@@ -71,16 +73,13 @@ const DEPARTMENTS = [
 
 const TSHIRT_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL"];
 
-const formatDate = (dateValue) => {
-  if (!dateValue) {
-    return "Date not available";
-  }
+const formatDate = (value) => {
+  if (!value) return "Date not available";
 
-  const value = String(dateValue);
+  const stringValue = String(value);
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-").map(Number);
-
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
+    const [year, month, day] = stringValue.split("-").map(Number);
     const date = new Date(year, month - 1, day);
 
     if (Number.isNaN(date.getTime())) {
@@ -94,7 +93,7 @@ const formatDate = (dateValue) => {
     });
   }
 
-  const date = new Date(dateValue);
+  const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "Date not available";
@@ -107,21 +106,19 @@ const formatDate = (dateValue) => {
   });
 };
 
-const formatTime = (timeValue) => {
-  if (!timeValue) {
-    return "";
+const formatTime = (value) => {
+  if (!value) return "";
+
+  const stringValue = String(value).trim();
+
+  if (/am|pm/i.test(stringValue)) {
+    return stringValue;
   }
 
-  const value = String(timeValue).trim();
-
-  if (/am|pm/i.test(value)) {
-    return value;
-  }
-
-  const match = value.match(/^(\d{1,2}):(\d{2})/);
+  const match = stringValue.match(/^(\d{1,2}):(\d{2})/);
 
   if (!match) {
-    return value;
+    return stringValue;
   }
 
   let hours = Number(match[1]);
@@ -135,9 +132,7 @@ const formatTime = (timeValue) => {
 };
 
 const getEventTime = (event) => {
-  if (!event) {
-    return "Time not available";
-  }
+  if (!event) return "Time not available";
 
   if (event.eventTime) {
     return event.eventTime;
@@ -161,9 +156,7 @@ const getEventTime = (event) => {
 };
 
 const getEventId = (event) => {
-  if (!event) {
-    return "";
-  }
+  if (!event) return "";
 
   return (
     event._id?.toString?.() || event._id || event.id || event.eventId || ""
@@ -171,17 +164,13 @@ const getEventId = (event) => {
 };
 
 const getPackageId = (item) => {
-  if (!item) {
-    return "";
-  }
+  if (!item) return "";
 
   return item.id || item.packageId || item._id?.toString?.() || item._id || "";
 };
 
 const getPackages = (event) => {
-  if (!event) {
-    return [];
-  }
+  if (!event) return [];
 
   if (Array.isArray(event.packages)) {
     return event.packages;
@@ -220,9 +209,7 @@ const isEventObject = (value) => {
 };
 
 const extractEvent = (data) => {
-  if (!data) {
-    return null;
-  }
+  if (!data) return null;
 
   if (isEventObject(data)) {
     return data;
@@ -261,9 +248,7 @@ const getApiErrorMessage = (error) => {
 };
 
 const getRegistrationResult = (data) => {
-  if (!data) {
-    return null;
-  }
+  if (!data) return null;
 
   if (data.registration) {
     return data.registration;
@@ -310,22 +295,18 @@ const ReunionRegister = () => {
     formState: { errors },
   } = useForm({
     mode: "onChange",
-
     defaultValues: {
       name: "",
       email: "",
       phone: "",
       district: "",
       city: "",
-
       studentType: "",
       classLevel: "",
       batchYear: "",
       department: "",
-
       packageId: "",
       tshirtSize: "",
-
       agreeToRules: false,
     },
   });
@@ -336,32 +317,55 @@ const ReunionRegister = () => {
   const tshirtSize = watch("tshirtSize");
   const agreeToRules = watch("agreeToRules");
 
+  /*
+   * ---------------------------------------------------------
+   * Firebase authenticated user
+   * ---------------------------------------------------------
+   */
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user || null);
       setAuthLoading(false);
 
-      if (user?.email) {
-        setValue("email", user.email, {
-          shouldValidate: true,
-        });
-      }
+      if (user) {
+        if (user.email) {
+          setValue("email", user.email, {
+            shouldValidate: true,
+          });
+        }
 
-      if (user?.displayName) {
-        setValue("name", user.displayName, {
-          shouldValidate: true,
-        });
+        if (user.displayName) {
+          setValue("name", user.displayName, {
+            shouldValidate: true,
+          });
+        }
+      } else {
+        setValue("email", "");
+        setValue("name", "");
       }
     });
 
     return () => unsubscribe();
   }, [setValue]);
 
+  /*
+   * ---------------------------------------------------------
+   * Department reset
+   * ---------------------------------------------------------
+   */
+
   useEffect(() => {
     if (classLevel !== "9" && classLevel !== "10") {
       setValue("department", "");
     }
   }, [classLevel, setValue]);
+
+  /*
+   * ---------------------------------------------------------
+   * Load active reunion
+   * ---------------------------------------------------------
+   */
 
   const {
     data: reunionResponse,
@@ -383,23 +387,25 @@ const ReunionRegister = () => {
   });
 
   const reunion = useMemo(() => {
-    const event = extractEvent(reunionResponse);
-
-    if (!event) {
-      return null;
-    }
-
-    return event;
+    return extractEvent(reunionResponse);
   }, [reunionResponse]);
 
-  const eventId = useMemo(() => getEventId(reunion), [reunion]);
+  const eventId = useMemo(() => {
+    return getEventId(reunion);
+  }, [reunion]);
 
-  const eventPackages = useMemo(() => getPackages(reunion), [reunion]);
+  const eventPackages = useMemo(() => {
+    return getPackages(reunion);
+  }, [reunion]);
+
+  /*
+   * ---------------------------------------------------------
+   * Default package
+   * ---------------------------------------------------------
+   */
 
   const defaultPackageId = useMemo(() => {
-    if (!reunion) {
-      return "";
-    }
+    if (!reunion) return "";
 
     if (reunion.packageId) {
       return reunion.packageId;
@@ -424,6 +430,12 @@ const ReunionRegister = () => {
     }
   }, [defaultPackageId, selectedPackageId, setValue]);
 
+  /*
+   * ---------------------------------------------------------
+   * Registration status
+   * ---------------------------------------------------------
+   */
+
   const registrationDeadlinePassed = useMemo(() => {
     if (!reunion?.registrationDeadline) {
       return false;
@@ -444,6 +456,12 @@ const ReunionRegister = () => {
     reunion?.registrationStatus === "closed" ||
     registrationDeadlinePassed;
 
+  /*
+   * ---------------------------------------------------------
+   * Selected package
+   * ---------------------------------------------------------
+   */
+
   const selectedPackage = useMemo(() => {
     if (!selectedPackageId) {
       return null;
@@ -456,6 +474,12 @@ const ReunionRegister = () => {
     );
   }, [eventPackages, selectedPackageId]);
 
+  /*
+   * ---------------------------------------------------------
+   * Registration mutation
+   * ---------------------------------------------------------
+   */
+
   const registrationMutation = useMutation({
     mutationFn: async (payload) => {
       const response = await axiosSecure.post(
@@ -467,9 +491,12 @@ const ReunionRegister = () => {
     },
 
     onSuccess: (response) => {
+      const registration = getRegistrationResult(response);
+      const registrationId = getRegistrationId(response);
+
       setRegistrationSuccess({
-        ...getRegistrationResult(response),
-        registrationId: getRegistrationId(response),
+        ...(registration || {}),
+        registrationId,
       });
 
       toast.success("Registration completed successfully!");
@@ -511,6 +538,12 @@ const ReunionRegister = () => {
     },
   });
 
+  /*
+   * ---------------------------------------------------------
+   * Step validation
+   * ---------------------------------------------------------
+   */
+
   const validateCurrentStep = async () => {
     if (currentStep === 1) {
       return trigger(["name", "email", "phone", "district", "city"]);
@@ -542,7 +575,6 @@ const ReunionRegister = () => {
 
     if (!isValid) {
       toast.error("Please complete all required fields.");
-
       return;
     }
 
@@ -567,6 +599,12 @@ const ReunionRegister = () => {
     }
   };
 
+  /*
+   * ---------------------------------------------------------
+   * Submit
+   * ---------------------------------------------------------
+   */
+
   const onSubmit = (formData) => {
     if (!currentUser) {
       toast.error("Please login before registering.");
@@ -588,24 +626,60 @@ const ReunionRegister = () => {
 
     if (isRegistrationClosed) {
       toast.error("Registration is currently closed.");
-
       return;
     }
 
     if (!agreeToRules) {
       toast.error("Please agree to the reunion rules.");
-
       return;
     }
 
     const authenticatedEmail = currentUser.email?.trim().toLowerCase();
 
-    const participantEmail = formData.email?.trim().toLowerCase();
+    if (!authenticatedEmail) {
+      toast.error("Your account does not have a valid email address.");
 
-    if (!authenticatedEmail || authenticatedEmail !== participantEmail) {
-      toast.error(
-        "The registration email must match your logged-in account email.",
-      );
+      return;
+    }
+
+    /*
+     * Use Firebase authenticated email instead of trusting
+     * the submitted form email.
+     */
+    const participantEmail = authenticatedEmail;
+
+    /*
+     * Make sure class 9/10 has a department.
+     */
+    if (
+      (formData.classLevel === "9" || formData.classLevel === "10") &&
+      !formData.department
+    ) {
+      toast.error("Please select your department.");
+
+      setCurrentStep(2);
+
+      return;
+    }
+
+    /*
+     * Package is required.
+     */
+    if (!formData.packageId) {
+      toast.error("Please select a reunion package.");
+
+      setCurrentStep(3);
+
+      return;
+    }
+
+    /*
+     * T-shirt size is required.
+     */
+    if (!formData.tshirtSize) {
+      toast.error("Please select your T-shirt size.");
+
+      setCurrentStep(3);
 
       return;
     }
@@ -621,9 +695,7 @@ const ReunionRegister = () => {
 
       schoolInfo: {
         studentType: formData.studentType,
-
         classLevel: formData.classLevel,
-
         batchYear: Number(formData.batchYear),
 
         department:
@@ -650,11 +722,19 @@ const ReunionRegister = () => {
     registrationMutation.mutate(payload);
   };
 
+  /*
+   * ---------------------------------------------------------
+   * Loading
+   * ---------------------------------------------------------
+   */
+
   if (authLoading || reunionLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
-          <FiLoader className="mx-auto h-10 w-10 animate-spin text-indigo-600" />
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
+            <FiLoader className="h-8 w-8 animate-spin text-indigo-600" />
+          </div>
 
           <h2 className="mt-5 text-xl font-bold text-slate-900">
             Loading registration
@@ -668,20 +748,26 @@ const ReunionRegister = () => {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * Login required
+   * ---------------------------------------------------------
+   */
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto max-w-xl">
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50">
+        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
+          <div className="w-full rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-xl sm:p-10 md:p-12">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
               <FiUsers className="h-8 w-8 text-indigo-600" />
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 md:text-3xl">
+            <h1 className="mt-6 text-2xl font-bold text-slate-900 sm:text-3xl">
               Login Required
             </h1>
 
-            <p className="mt-3 leading-7 text-slate-600">
+            <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600 sm:text-base">
               You need to login before registering for the school reunion.
             </p>
 
@@ -694,7 +780,7 @@ const ReunionRegister = () => {
                   },
                 })
               }
-              className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700"
+              className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 sm:w-auto"
             >
               Login to Continue
               <FiArrowRight />
@@ -705,20 +791,26 @@ const ReunionRegister = () => {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * Reunion unavailable
+   * ---------------------------------------------------------
+   */
+
   if (reunionError || !reunion) {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto max-w-xl">
-          <div className="rounded-3xl border border-red-100 bg-white p-8 text-center shadow-xl md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
+          <div className="w-full rounded-3xl border border-red-100 bg-white p-7 text-center shadow-xl sm:p-10 md:p-12">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
               <FiXCircle className="h-8 w-8 text-red-600" />
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 md:text-3xl">
+            <h1 className="mt-6 text-2xl font-bold text-slate-900 sm:text-3xl">
               Reunion Information Unavailable
             </h1>
 
-            <p className="mt-3 leading-7 text-slate-600">
+            <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600 sm:text-base">
               We could not load the active reunion information right now.
             </p>
 
@@ -731,7 +823,7 @@ const ReunionRegister = () => {
             <button
               type="button"
               onClick={() => refetchReunion()}
-              className="mt-7 inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700"
+              className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 sm:w-auto"
             >
               Try Again
             </button>
@@ -741,6 +833,12 @@ const ReunionRegister = () => {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * Registration successful
+   * ---------------------------------------------------------
+   */
+
   if (registrationSuccess) {
     const registrationId =
       registrationSuccess.registrationId ||
@@ -748,36 +846,36 @@ const ReunionRegister = () => {
       registrationSuccess._id;
 
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto max-w-2xl">
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 px-6 py-10 text-center text-white md:px-10">
+      <div className="min-h-screen bg-slate-50 px-4 py-10 sm:py-12">
+        <div className="mx-auto flex min-h-[70vh] max-w-2xl items-center justify-center">
+          <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 px-6 py-10 text-center text-white sm:px-10 md:py-12">
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/15">
                 <FiCheckCircle className="h-11 w-11" />
               </div>
 
-              <h1 className="mt-5 text-3xl font-bold md:text-4xl">
+              <h1 className="mt-5 text-3xl font-bold sm:text-4xl">
                 Registration Successful!
               </h1>
 
-              <p className="mx-auto mt-3 max-w-lg leading-7 text-emerald-50">
+              <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-emerald-50 sm:text-base">
                 Thank you for registering for our school reunion. We look
                 forward to seeing you at the event.
               </p>
             </div>
 
-            <div className="p-6 md:p-10">
+            <div className="p-6 sm:p-8 md:p-10">
               {registrationId && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
-                  <p className="text-sm font-medium text-slate-500">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center sm:p-6">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Your Registration ID
                   </p>
 
-                  <p className="mt-2 break-all text-2xl font-bold tracking-wide text-indigo-600">
+                  <p className="mt-3 break-all text-xl font-bold tracking-wide text-indigo-600 sm:text-2xl">
                     {registrationId}
                   </p>
 
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
                     Please save this ID for future reference.
                   </p>
                 </div>
@@ -787,7 +885,7 @@ const ReunionRegister = () => {
                 <button
                   type="button"
                   onClick={() => navigate("/dashboard/registrations")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 font-semibold text-white transition hover:bg-indigo-700"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-indigo-700 sm:text-base"
                 >
                   View My Registration
                   <FiArrowRight />
@@ -796,7 +894,7 @@ const ReunionRegister = () => {
                 <button
                   type="button"
                   onClick={() => navigate("/")}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3.5 font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:text-base"
                 >
                   Back to Home
                 </button>
@@ -808,34 +906,43 @@ const ReunionRegister = () => {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * Registration closed
+   * ---------------------------------------------------------
+   */
+
   if (isRegistrationClosed) {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto max-w-xl">
-          <div className="rounded-3xl border border-amber-100 bg-white p-8 text-center shadow-xl md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
+          <div className="w-full rounded-3xl border border-amber-100 bg-white p-7 text-center shadow-xl sm:p-10 md:p-12">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50">
               <FiClock className="h-8 w-8 text-amber-600" />
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 md:text-3xl">
+            <h1 className="mt-6 text-2xl font-bold text-slate-900 sm:text-3xl">
               Registration Closed
             </h1>
 
-            <p className="mt-3 leading-7 text-slate-600">
+            <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
               Registration for this reunion is currently closed.
             </p>
 
             {reunion.registrationDeadline && (
-              <p className="mt-3 text-sm text-slate-500">
-                Registration deadline:{" "}
-                <strong>{formatDate(reunion.registrationDeadline)}</strong>
-              </p>
+              <div className="mt-5 rounded-2xl bg-amber-50 p-4">
+                <p className="text-sm text-amber-800">Registration deadline</p>
+
+                <p className="mt-1 font-bold text-amber-900">
+                  {formatDate(reunion.registrationDeadline)}
+                </p>
+              </div>
             )}
 
             <button
               type="button"
               onClick={() => navigate("/")}
-              className="mt-7 inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700"
+              className="mt-7 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 sm:w-auto"
             >
               Back to Home
             </button>
@@ -845,111 +952,105 @@ const ReunionRegister = () => {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * Main registration form
+   * ---------------------------------------------------------
+   */
+
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8 md:py-12">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700">
+    <div className="min-h-screen bg-slate-50 px-3 py-6 sm:px-4 sm:py-8 lg:py-12">
+      <div className="mx-auto w-full max-w-6xl">
+        {/* Header */}
+        <div className="mb-7 text-center sm:mb-9">
+          <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700 sm:text-sm">
             <FiUsers />
             School Reunion Registration
           </div>
 
-          <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
             Register for the Reunion
           </h1>
 
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
             Complete the form below to secure your participation in our
             memorable school reunion.
           </p>
         </div>
 
-        <div className="mb-8 overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 text-white shadow-xl">
-          <div className="grid gap-6 p-6 md:grid-cols-3 md:p-8">
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-white/10 p-3">
-                <FiCalendar className="h-5 w-5" />
-              </div>
+        {/* Event information */}
+        <div className="mb-7 overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 text-white shadow-xl sm:mb-8">
+          <div className="grid gap-5 p-5 sm:p-6 md:grid-cols-3 md:gap-6 md:p-8">
+            <EventInfo
+              icon={<FiCalendar />}
+              label="Reunion Date"
+              value={formatDate(reunion.eventDate)}
+            />
 
-              <div>
-                <p className="text-xs uppercase tracking-wider text-indigo-100">
-                  Reunion Date
-                </p>
+            <EventInfo
+              icon={<FiClock />}
+              label="Event Time"
+              value={getEventTime(reunion)}
+            />
 
-                <p className="mt-1 font-semibold">
-                  {formatDate(reunion.eventDate)}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-white/10 p-3">
-                <FiClock className="h-5 w-5" />
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wider text-indigo-100">
-                  Event Time
-                </p>
-
-                <p className="mt-1 font-semibold">{getEventTime(reunion)}</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-white/10 p-3">
-                <FiMapPin className="h-5 w-5" />
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wider text-indigo-100">
-                  Venue
-                </p>
-
-                <p className="mt-1 font-semibold">
-                  {reunion.venue ||
-                    reunion.location ||
-                    "Venue will be announced"}
-                </p>
-              </div>
-            </div>
+            <EventInfo
+              icon={<FiMapPin />}
+              label="Venue"
+              value={
+                reunion.venue || reunion.location || "Venue will be announced"
+              }
+            />
           </div>
         </div>
 
-        <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-          <div className="flex items-center justify-between">
+        {/* Steps */}
+        <div className="mb-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:mb-8 sm:p-6">
+          <div className="flex items-center">
             {STEPS.map((step, index) => {
               const completed = currentStep > step.id;
-
               const active = currentStep === step.id;
 
               return (
-                <div key={step.id} className="flex flex-1 items-center">
-                  <div className="flex min-w-0 flex-col items-center">
+                <div key={step.id} className="flex min-w-0 flex-1 items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (completed) {
+                        setCurrentStep(step.id);
+                      }
+                    }}
+                    disabled={!completed && !active}
+                    className="flex min-w-0 flex-col items-center"
+                    aria-label={`Step ${step.id}: ${step.title}`}
+                  >
                     <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition md:h-11 md:w-11 ${
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition sm:h-11 sm:w-11 sm:text-sm ${
                         completed || active
                           ? "bg-indigo-600 text-white"
                           : "bg-slate-100 text-slate-500"
                       }`}
                     >
-                      {completed ? <FiCheckCircle /> : step.id}
+                      {completed ? (
+                        <FiCheck className="h-4 w-4 sm:h-5 sm:w-5" />
+                      ) : (
+                        step.id
+                      )}
                     </div>
 
                     <span
-                      className={`mt-2 hidden text-xs font-semibold sm:block ${
+                      className={`mt-2 text-[10px] font-semibold sm:text-xs ${
                         active ? "text-indigo-600" : "text-slate-500"
                       }`}
                     >
-                      <span className="md:hidden">{step.shortTitle}</span>
+                      <span className="sm:hidden">{step.shortTitle}</span>
 
-                      <span className="hidden md:inline">{step.title}</span>
+                      <span className="hidden sm:inline">{step.title}</span>
                     </span>
-                  </div>
+                  </button>
 
                   {index < STEPS.length - 1 && (
                     <div
-                      className={`mx-2 h-1 flex-1 rounded-full md:mx-4 ${
+                      className={`mx-1.5 h-1 flex-1 rounded-full sm:mx-3 md:mx-5 ${
                         currentStep > step.id ? "bg-indigo-600" : "bg-slate-100"
                       }`}
                     />
@@ -960,11 +1061,13 @@ const ReunionRegister = () => {
           </div>
         </div>
 
+        {/* Form */}
         <form
           onSubmit={handleSubmit(onSubmit)}
           className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl"
         >
-          <div className="p-6 md:p-10">
+          <div className="p-5 sm:p-7 md:p-10">
+            {/* STEP 1 */}
             {currentStep === 1 && (
               <section>
                 <StepHeading
@@ -1011,7 +1114,6 @@ const ReunionRegister = () => {
 
                       pattern: {
                         value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-
                         message: "Please enter a valid email.",
                       },
                     })}
@@ -1021,6 +1123,7 @@ const ReunionRegister = () => {
                     label="Phone Number"
                     required
                     type="tel"
+                    inputMode="numeric"
                     placeholder="01XXXXXXXXX"
                     icon={<FiPhone />}
                     error={errors.phone?.message}
@@ -1030,7 +1133,6 @@ const ReunionRegister = () => {
 
                       pattern: {
                         value: /^01[3-9]\d{8}$/,
-
                         message: "Enter a valid Bangladesh mobile number.",
                       },
                     })}
@@ -1073,6 +1175,7 @@ const ReunionRegister = () => {
               </section>
             )}
 
+            {/* STEP 2 */}
             {currentStep === 2 && (
               <section>
                 <StepHeading
@@ -1120,6 +1223,7 @@ const ReunionRegister = () => {
                     label="Batch / Passing Year"
                     required
                     type="number"
+                    inputMode="numeric"
                     placeholder="e.g. 2025"
                     error={errors.batchYear?.message}
                     {...register("batchYear", {
@@ -1163,18 +1267,25 @@ const ReunionRegister = () => {
                 </div>
 
                 <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-                  <p className="text-sm font-semibold text-indigo-900">
-                    Department information
-                  </p>
+                  <div className="flex items-start gap-3">
+                    <FiShield className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
 
-                  <p className="mt-1 text-sm leading-6 text-indigo-700">
-                    Classes 6–8 do not have departments. Department selection is
-                    required only for Classes 9–10.
-                  </p>
+                    <div>
+                      <p className="text-sm font-bold text-indigo-900">
+                        Department information
+                      </p>
+
+                      <p className="mt-1 text-sm leading-6 text-indigo-700">
+                        Classes 6–8 do not have departments. Department
+                        selection is required only for Classes 9–10.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </section>
             )}
 
+            {/* STEP 3 */}
             {currentStep === 3 && (
               <section>
                 <StepHeading
@@ -1191,13 +1302,19 @@ const ReunionRegister = () => {
                       const isSelected =
                         String(selectedPackageId) === String(id);
 
+                      const packageItems = Array.isArray(item.items)
+                        ? item.items
+                        : Array.isArray(item.gifts)
+                          ? item.gifts
+                          : [];
+
                       return (
                         <label
                           key={id}
-                          className={`relative cursor-pointer rounded-2xl border-2 p-5 transition ${
+                          className={`relative block cursor-pointer rounded-2xl border-2 p-5 transition sm:p-6 ${
                             isSelected
-                              ? "border-indigo-600 bg-indigo-50"
-                              : "border-slate-200 bg-white hover:border-indigo-300"
+                              ? "border-indigo-600 bg-indigo-50 shadow-md"
+                              : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-sm"
                           }`}
                         >
                           <input
@@ -1231,51 +1348,37 @@ const ReunionRegister = () => {
                             </p>
                           )}
 
-                          {item.price !== undefined && (
+                          {item.price !== undefined && item.price !== null && (
                             <p className="mt-4 text-xl font-bold text-indigo-600">
                               ৳{item.price}
                             </p>
                           )}
 
-                          {Array.isArray(item.gifts) &&
-                            item.gifts.length > 0 && (
-                              <ul className="mt-4 space-y-2">
-                                {item.gifts.map((gift, giftIndex) => (
+                          {packageItems.length > 0 && (
+                            <ul className="mt-5 space-y-2.5">
+                              {packageItems.map((gift, giftIndex) => {
+                                const giftName =
+                                  typeof gift === "string"
+                                    ? gift
+                                    : gift?.name || gift?.title || "";
+
+                                if (!giftName) {
+                                  return null;
+                                }
+
+                                return (
                                   <li
                                     key={`${id}-${giftIndex}`}
                                     className="flex items-start gap-2 text-sm text-slate-600"
                                   >
-                                    <FiCheckCircle className="mt-0.5 shrink-0 text-emerald-500" />
+                                    <FiCheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
 
-                                    <span>
-                                      {typeof gift === "string"
-                                        ? gift
-                                        : gift?.name || gift?.title || ""}
-                                    </span>
+                                    <span>{giftName}</span>
                                   </li>
-                                ))}
-                              </ul>
-                            )}
-
-                          {Array.isArray(item.items) &&
-                            item.items.length > 0 && (
-                              <ul className="mt-4 space-y-2">
-                                {item.items.map((gift, giftIndex) => (
-                                  <li
-                                    key={`${id}-item-${giftIndex}`}
-                                    className="flex items-start gap-2 text-sm text-slate-600"
-                                  >
-                                    <FiCheckCircle className="mt-0.5 shrink-0 text-emerald-500" />
-
-                                    <span>
-                                      {typeof gift === "string"
-                                        ? gift
-                                        : gift?.name || gift?.title || ""}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
+                                );
+                              })}
+                            </ul>
+                          )}
                         </label>
                       );
                     })}
@@ -1300,7 +1403,7 @@ const ReunionRegister = () => {
                 )}
 
                 {errors.packageId?.message && (
-                  <p className="mt-2 text-sm text-red-600">
+                  <p className="mt-2 text-sm font-medium text-red-600">
                     {errors.packageId.message}
                   </p>
                 )}
@@ -1328,7 +1431,7 @@ const ReunionRegister = () => {
                 {selectedPackage && (
                   <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
                     <div className="flex items-start gap-3">
-                      <FiCheckCircle className="mt-0.5 h-5 w-5 text-emerald-600" />
+                      <FiCheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
 
                       <div>
                         <p className="font-semibold text-emerald-900">
@@ -1347,6 +1450,7 @@ const ReunionRegister = () => {
               </section>
             )}
 
+            {/* STEP 4 */}
             {currentStep === 4 && (
               <section>
                 <StepHeading
@@ -1355,7 +1459,7 @@ const ReunionRegister = () => {
                   description="Review your information before submitting."
                 />
 
-                <div className="space-y-6">
+                <div className="space-y-5 sm:space-y-6">
                   <SummaryCard
                     title="Personal Information"
                     items={[
@@ -1392,6 +1496,10 @@ const ReunionRegister = () => {
                       ["Date", formatDate(reunion.eventDate)],
                       ["Time", getEventTime(reunion)],
                       [
+                        "Venue",
+                        reunion.venue || reunion.location || "To be announced",
+                      ],
+                      [
                         "Package",
                         selectedPackage?.name ||
                           selectedPackage?.title ||
@@ -1405,12 +1513,12 @@ const ReunionRegister = () => {
                     className={`flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-5 transition ${
                       agreeToRules
                         ? "border-indigo-600 bg-indigo-50"
-                        : "border-slate-200 bg-white"
+                        : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                   >
                     <input
                       type="checkbox"
-                      className="mt-1 h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      className="mt-1 h-5 w-5 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                       {...register("agreeToRules", {
                         required: "You must agree to the reunion rules.",
                       })}
@@ -1430,7 +1538,7 @@ const ReunionRegister = () => {
                   </label>
 
                   {errors.agreeToRules?.message && (
-                    <p className="text-sm text-red-600">
+                    <p className="text-sm font-medium text-red-600">
                       {errors.agreeToRules.message}
                     </p>
                   )}
@@ -1439,13 +1547,14 @@ const ReunionRegister = () => {
             )}
           </div>
 
-          <div className="border-t border-slate-200 bg-slate-50 px-6 py-5 md:px-10">
+          {/* Form actions */}
+          <div className="border-t border-slate-200 bg-slate-50 px-5 py-5 sm:px-7 md:px-10">
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
                 onClick={handlePrevious}
                 disabled={currentStep === 1 || registrationMutation.isPending}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:text-base"
               >
                 <FiArrowLeft />
                 Previous
@@ -1456,7 +1565,7 @@ const ReunionRegister = () => {
                   type="button"
                   onClick={handleNext}
                   disabled={registrationMutation.isPending}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:text-base"
                 >
                   Continue
                   <FiArrowRight />
@@ -1465,7 +1574,7 @@ const ReunionRegister = () => {
                 <button
                   type="submit"
                   disabled={registrationMutation.isPending || !agreeToRules}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:text-base"
                 >
                   {registrationMutation.isPending ? (
                     <>
@@ -1488,19 +1597,51 @@ const ReunionRegister = () => {
   );
 };
 
+/*
+ * -----------------------------------------------------------
+ * Event Info
+ * -----------------------------------------------------------
+ */
+
+const EventInfo = ({ icon, label, value }) => {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10">
+        {icon}
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-indigo-100 sm:text-xs">
+          {label}
+        </p>
+
+        <p className="mt-1 break-words text-sm font-semibold leading-6 sm:text-base">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+/*
+ * -----------------------------------------------------------
+ * Summary Card
+ * -----------------------------------------------------------
+ */
+
 const SummaryCard = ({ title, items }) => {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-      <h3 className="text-base font-bold text-slate-900">{title}</h3>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
+      <h3 className="text-base font-bold text-slate-900 sm:text-lg">{title}</h3>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         {items.map(([label, value]) => (
-          <div key={label}>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          <div key={label} className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-xs">
               {label}
             </p>
 
-            <p className="mt-1 break-words text-sm font-semibold text-slate-700">
+            <p className="mt-1 break-words text-sm font-semibold leading-6 text-slate-700">
               {value || "Not provided"}
             </p>
           </div>
@@ -1510,16 +1651,24 @@ const SummaryCard = ({ title, items }) => {
   );
 };
 
+/*
+ * -----------------------------------------------------------
+ * Step Heading
+ * -----------------------------------------------------------
+ */
+
 const StepHeading = ({ icon, title, description }) => {
   return (
-    <div className="mb-8">
-      <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+    <div className="mb-7 sm:mb-8">
+      <div className="flex items-start gap-3 sm:gap-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 sm:h-12 sm:w-12">
           {icon}
         </div>
 
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+            {title}
+          </h2>
 
           <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
         </div>
@@ -1528,9 +1677,15 @@ const StepHeading = ({ icon, title, description }) => {
   );
 };
 
+/*
+ * -----------------------------------------------------------
+ * Input Field
+ * -----------------------------------------------------------
+ */
+
 const InputField = ({ label, icon, error, required, ...props }) => {
   return (
-    <div>
+    <div className="min-w-0">
       <label className="mb-2 block text-sm font-semibold text-slate-700">
         {label}
 
@@ -1557,15 +1712,23 @@ const InputField = ({ label, icon, error, required, ...props }) => {
       </div>
 
       {error && (
-        <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>
+        <p className="mt-1.5 text-xs font-medium leading-5 text-red-600">
+          {error}
+        </p>
       )}
     </div>
   );
 };
 
+/*
+ * -----------------------------------------------------------
+ * Select Field
+ * -----------------------------------------------------------
+ */
+
 const SelectField = ({ label, icon, error, required, children, ...props }) => {
   return (
-    <div>
+    <div className="min-w-0">
       <label className="mb-2 block text-sm font-semibold text-slate-700">
         {label}
 
@@ -1596,7 +1759,9 @@ const SelectField = ({ label, icon, error, required, children, ...props }) => {
       </div>
 
       {error && (
-        <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>
+        <p className="mt-1.5 text-xs font-medium leading-5 text-red-600">
+          {error}
+        </p>
       )}
     </div>
   );
