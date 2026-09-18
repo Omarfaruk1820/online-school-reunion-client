@@ -44,6 +44,10 @@ googleProvider.setCustomParameters({
 
 const DEFAULT_USER_NAME = "School Member";
 
+const MAX_NAME_LENGTH = 100;
+const MAX_PHONE_LENGTH = 11;
+const MAX_PHOTO_URL_LENGTH = 2000;
+
 const PHONE_REGEX = /^01[3-9]\d{8}$/;
 
 // ============================================================
@@ -70,34 +74,29 @@ const AuthProvider = ({ children }) => {
   const syncPromiseRef = useRef(new Map());
 
   /*
-   * Track component mounted state.
+   * Track whether component is mounted.
    */
   const isMountedRef = useRef(true);
 
   /*
-   * Prevent onAuthStateChanged from performing
-   * an automatic sync while email registration
-   * is being handled manually.
+   * Prevent auth-state listener from racing
+   * with email/password registration.
    */
   const isRegisteringRef = useRef(false);
 
   /*
-   * Store the Firebase UID currently being registered.
+   * Store UID currently being registered.
    */
   const registrationUidRef = useRef(null);
 
   /*
-   * Prevent onAuthStateChanged from racing with
-   * interactive Google sign-in.
-   *
-   * This is important because Google signInWithPopup()
-   * can trigger onAuthStateChanged() before the explicit
-   * signInWithGoogle() synchronization runs.
+   * Prevent auth-state listener from racing
+   * with Google popup authentication.
    */
   const isGoogleSigningInRef = useRef(false);
 
   // ==========================================================
-  // EMAIL NORMALIZATION
+  // NORMALIZE EMAIL
   // ==========================================================
 
   const normalizeEmail = useCallback((email) => {
@@ -109,7 +108,7 @@ const AuthProvider = ({ children }) => {
   }, []);
 
   // ==========================================================
-  // STRING HELPER
+  // CLEAN STRING
   // ==========================================================
 
   const cleanString = useCallback((value) => {
@@ -125,7 +124,7 @@ const AuthProvider = ({ children }) => {
   }, []);
 
   // ==========================================================
-  // GET FIREBASE ID TOKEN
+  // FIREBASE ID TOKEN
   // ==========================================================
 
   const getFirebaseIdToken = useCallback(
@@ -146,7 +145,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // DETECT AUTH PROVIDER
+  // DETECT PROVIDER
   // ==========================================================
 
   const getProvider = useCallback((firebaseUser) => {
@@ -154,11 +153,11 @@ const AuthProvider = ({ children }) => {
       return "password";
     }
 
-    const googleProviderExists = firebaseUser.providerData?.some(
+    const hasGoogleProvider = firebaseUser.providerData?.some(
       (provider) => provider.providerId === "google.com",
     );
 
-    if (googleProviderExists) {
+    if (hasGoogleProvider) {
       return "google";
     }
 
@@ -182,11 +181,7 @@ const AuthProvider = ({ children }) => {
       return response.data?.user || null;
     } catch (error) {
       /*
-       * Firebase user can exist before MongoDB user
-       * is created.
-       *
-       * Therefore 404 means the MongoDB user does
-       * not exist yet.
+       * MongoDB user does not exist yet.
        */
       if (error?.response?.status === 404) {
         return null;
@@ -195,6 +190,109 @@ const AuthProvider = ({ children }) => {
       throw error;
     }
   }, []);
+
+  // ==========================================================
+  // BUILD APPLICATION USER
+  // ==========================================================
+
+  const buildUser = useCallback(
+    (firebaseUser, databaseUser = {}) => {
+      if (!firebaseUser) {
+        return null;
+      }
+
+      const provider = databaseUser?.provider || getProvider(firebaseUser);
+
+      const databaseName = cleanString(databaseUser?.name);
+
+      const firebaseName = cleanString(firebaseUser.displayName);
+
+      const databaseEmail = normalizeEmail(databaseUser?.email);
+
+      const firebaseEmail = normalizeEmail(firebaseUser.email);
+
+      const databasePhoto = cleanString(databaseUser?.photo);
+
+      const firebasePhoto = cleanString(firebaseUser.photoURL);
+
+      const finalPhoto = databasePhoto || firebasePhoto;
+
+      const databasePhone =
+        databaseUser?.phone !== undefined ? databaseUser.phone : null;
+
+      const applicationUser = {
+        /*
+         * Firebase identity
+         */
+        uid: firebaseUser.uid,
+
+        /*
+         * MongoDB public ID.
+         *
+         * Backend sanitizeUser() converts:
+         *
+         * _id -> id
+         */
+        id: databaseUser?.id || databaseUser?._id || null,
+
+        /*
+         * Basic information
+         */
+        name: databaseName || firebaseName || DEFAULT_USER_NAME,
+
+        email: databaseEmail || firebaseEmail || "",
+
+        phone: databasePhone,
+
+        /*
+         * Authentication
+         */
+        provider,
+
+        emailVerified: firebaseUser.emailVerified === true,
+
+        /*
+         * Authorization
+         */
+        role: databaseUser?.role || "student",
+
+        status: databaseUser?.status || "active",
+
+        /*
+         * MongoDB timestamps
+         */
+        createdAt: databaseUser?.createdAt || null,
+
+        updatedAt: databaseUser?.updatedAt || null,
+
+        lastLogin: databaseUser?.lastLogin || null,
+
+        /*
+         * Additional profile
+         */
+        profile:
+          databaseUser?.profile &&
+          typeof databaseUser.profile === "object" &&
+          !Array.isArray(databaseUser.profile)
+            ? databaseUser.profile
+            : {},
+      };
+
+      /*
+       * Do not expose:
+       *
+       * photo: null
+       *
+       * Only add photo when a valid value exists.
+       */
+      if (finalPhoto) {
+        applicationUser.photo = finalPhoto;
+      }
+
+      return applicationUser;
+    },
+    [cleanString, getProvider, normalizeEmail],
+  );
 
   // ==========================================================
   // SAVE / SYNC USER TO MONGODB
@@ -221,7 +319,7 @@ const AuthProvider = ({ children }) => {
 
       const finalName = cleanName || DEFAULT_USER_NAME;
 
-      if (finalName.length > 100) {
+      if (finalName.length > MAX_NAME_LENGTH) {
         throw new Error("Name cannot exceed 100 characters.");
       }
 
@@ -235,40 +333,41 @@ const AuthProvider = ({ children }) => {
           : "";
 
       /*
-       * EMAIL/PASSWORD:
+       * Email/password users MUST have phone.
        *
-       * Phone is mandatory.
+       * Google users may have null phone.
        */
       if (!isGoogleProvider && !cleanPhone) {
         throw new Error("Phone number is required.");
       }
 
       /*
-       * GOOGLE:
-       *
-       * Phone is optional.
-       *
-       * If Google user provides a phone,
-       * validate it.
+       * Validate phone whenever supplied.
        */
-      if (cleanPhone && !isValidBangladeshiPhone(cleanPhone)) {
-        throw new Error("Enter a valid Bangladeshi phone number.");
+      if (cleanPhone) {
+        if (cleanPhone.length !== MAX_PHONE_LENGTH) {
+          throw new Error("Phone number must contain 11 digits.");
+        }
+
+        if (!isValidBangladeshiPhone(cleanPhone)) {
+          throw new Error("Enter a valid Bangladeshi phone number.");
+        }
       }
 
       // --------------------------------------------------------
       // PHOTO
       // --------------------------------------------------------
 
-      const cleanAdditionalPhoto =
+      const additionalPhoto =
         typeof additionalData.photo === "string"
           ? additionalData.photo.trim()
           : "";
 
-      const cleanFirebasePhoto = cleanString(firebaseUser.photoURL);
+      const firebasePhoto = cleanString(firebaseUser.photoURL);
 
-      const finalPhoto = cleanAdditionalPhoto || cleanFirebasePhoto;
+      const finalPhoto = additionalPhoto || firebasePhoto;
 
-      if (finalPhoto && finalPhoto.length > 2000) {
+      if (finalPhoto.length > MAX_PHOTO_URL_LENGTH) {
         throw new Error("Photo URL cannot exceed 2000 characters.");
       }
 
@@ -284,7 +383,7 @@ const AuthProvider = ({ children }) => {
           : undefined;
 
       // --------------------------------------------------------
-      // BACKEND PAYLOAD
+      // PAYLOAD
       // --------------------------------------------------------
 
       const payload = {
@@ -293,41 +392,29 @@ const AuthProvider = ({ children }) => {
       };
 
       /*
-       * IMPORTANT:
+       * Phone:
        *
-       * Manual registration:
-       * phone must exist.
+       * Password user:
+       * always present.
        *
-       * Google:
-       * send phone only when user actually provided it.
-       *
-       * This prevents sending:
-       *
-       * phone: ""
-       * phone: undefined
-       * phone: null
-       *
-       * from the frontend.
-       *
-       * The backend will create a new Google user
-       * with phone: null when no phone is supplied.
-       *
-       * For existing Google users, the backend preserves
-       * their existing phone value.
+       * Google user:
+       * only send when supplied.
        */
       if (cleanPhone) {
         payload.phone = cleanPhone;
       }
 
       /*
-       * Only send photo when there is an actual value.
+       * Photo:
+       * only send when available.
        */
       if (finalPhoto) {
         payload.photo = finalPhoto;
       }
 
       /*
-       * Only send profile when it actually exists.
+       * Profile:
+       * only send when supplied.
        */
       if (cleanProfile !== undefined) {
         payload.profile = cleanProfile;
@@ -351,85 +438,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // BUILD APPLICATION USER
-  // ==========================================================
-
-  const buildUser = useCallback(
-    (firebaseUser, databaseUser = {}) => {
-      if (!firebaseUser) {
-        return null;
-      }
-
-      const provider = databaseUser?.provider || getProvider(firebaseUser);
-
-      const databasePhoto = cleanString(databaseUser?.photo);
-
-      const firebasePhoto = cleanString(firebaseUser.photoURL);
-
-      const applicationUser = {
-        uid: firebaseUser.uid,
-
-        _id: databaseUser?._id || databaseUser?.id || null,
-
-        name:
-          databaseUser?.name || firebaseUser.displayName || DEFAULT_USER_NAME,
-
-        email: normalizeEmail(databaseUser?.email || firebaseUser.email),
-
-        /*
-         * Preserve null when MongoDB contains null.
-         *
-         * This is especially useful for a new Google user
-         * who has not provided a phone number yet.
-         */
-        phone: databaseUser?.phone !== undefined ? databaseUser.phone : null,
-
-        role: databaseUser?.role || "student",
-
-        status: databaseUser?.status || "active",
-
-        provider,
-
-        emailVerified: firebaseUser.emailVerified === true,
-
-        createdAt: databaseUser?.createdAt || null,
-
-        updatedAt: databaseUser?.updatedAt || null,
-
-        lastLogin: databaseUser?.lastLogin || null,
-
-        profile:
-          databaseUser?.profile &&
-          typeof databaseUser.profile === "object" &&
-          !Array.isArray(databaseUser.profile)
-            ? databaseUser.profile
-            : {},
-      };
-
-      // --------------------------------------------------------
-      // PHOTO
-      // --------------------------------------------------------
-
-      /*
-       * Only add photo when an actual value exists.
-       *
-       * Never:
-       *
-       * photo: null
-       */
-      const finalPhoto = databasePhoto || firebasePhoto;
-
-      if (finalPhoto) {
-        applicationUser.photo = finalPhoto;
-      }
-
-      return applicationUser;
-    },
-    [cleanString, getProvider, normalizeEmail],
-  );
-
-  // ==========================================================
-  // SYNC USER WITH BACKEND
+  // SYNCHRONIZE FIREBASE USER WITH MONGODB
   // ==========================================================
 
   const syncUserWithBackend = useCallback(
@@ -441,7 +450,7 @@ const AuthProvider = ({ children }) => {
       const uid = firebaseUser.uid;
 
       // --------------------------------------------------------
-      // PREVENT DUPLICATE SYNCHRONIZATION
+      // PREVENT DUPLICATE REQUEST
       // --------------------------------------------------------
 
       const existingPromise = syncPromiseRef.current.get(uid);
@@ -457,13 +466,13 @@ const AuthProvider = ({ children }) => {
           }
 
           // ----------------------------------------------------
-          // 1. GET EXISTING MONGODB USER
+          // CHECK EXISTING MONGODB USER
           // ----------------------------------------------------
 
           let databaseUser = await getCurrentUser();
 
           // ----------------------------------------------------
-          // 2. CHECK ADDITIONAL DATA
+          // CHECK ADDITIONAL DATA
           // ----------------------------------------------------
 
           const hasAdditionalData =
@@ -480,7 +489,7 @@ const AuthProvider = ({ children }) => {
                 !Array.isArray(additionalData.profile)));
 
           // ----------------------------------------------------
-          // 3. CREATE / UPDATE MONGODB USER
+          // CREATE OR UPDATE MONGODB USER
           // ----------------------------------------------------
 
           if (!databaseUser || hasAdditionalData) {
@@ -493,7 +502,7 @@ const AuthProvider = ({ children }) => {
           }
 
           // ----------------------------------------------------
-          // 4. GET USER AGAIN IF NECESSARY
+          // FALLBACK FETCH
           // ----------------------------------------------------
 
           if (!databaseUser) {
@@ -501,23 +510,23 @@ const AuthProvider = ({ children }) => {
           }
 
           // ----------------------------------------------------
-          // 5. MAKE SURE USER EXISTS
+          // VERIFY DATABASE USER
           // ----------------------------------------------------
 
           if (!databaseUser) {
             throw new Error(
-              "User was created but could not be retrieved from the database.",
+              "User exists in Firebase but could not be found in the database.",
             );
           }
 
           // ----------------------------------------------------
-          // 6. BUILD APPLICATION USER
+          // BUILD APPLICATION USER
           // ----------------------------------------------------
 
           const applicationUser = buildUser(firebaseUser, databaseUser);
 
           // ----------------------------------------------------
-          // 7. UPDATE REACT STATE
+          // UPDATE STATE
           // ----------------------------------------------------
 
           if (isMountedRef.current) {
@@ -552,7 +561,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // EMAIL / PASSWORD REGISTRATION
+  // EMAIL / PASSWORD SIGNUP
   // ==========================================================
 
   const usersignup = useCallback(
@@ -570,7 +579,7 @@ const AuthProvider = ({ children }) => {
       }
 
       // --------------------------------------------------------
-      // CLEAN REGISTRATION DATA
+      // NAME
       // --------------------------------------------------------
 
       const cleanName =
@@ -578,53 +587,53 @@ const AuthProvider = ({ children }) => {
           ? additionalData.name.trim()
           : "";
 
+      if (!cleanName) {
+        throw new Error("Name is required.");
+      }
+
+      if (cleanName.length > MAX_NAME_LENGTH) {
+        throw new Error("Name cannot exceed 100 characters.");
+      }
+
+      // --------------------------------------------------------
+      // PHONE
+      // --------------------------------------------------------
+
       const cleanPhone =
         typeof additionalData.phone === "string"
           ? additionalData.phone.trim()
           : "";
 
-      const cleanPhoto =
-        typeof additionalData.photo === "string"
-          ? additionalData.photo.trim()
-          : "";
-
-      // --------------------------------------------------------
-      // NAME VALIDATION
-      // --------------------------------------------------------
-
-      if (!cleanName) {
-        throw new Error("Name is required.");
-      }
-
-      if (cleanName.length > 100) {
-        throw new Error("Name cannot exceed 100 characters.");
-      }
-
-      // --------------------------------------------------------
-      // PHONE VALIDATION
-      // --------------------------------------------------------
-
-      /*
-       * Manual Email/Password registration
-       * ALWAYS requires a phone number.
-       */
       if (!cleanPhone) {
         throw new Error("Phone number is required.");
+      }
+
+      if (cleanPhone.length !== MAX_PHONE_LENGTH) {
+        throw new Error("Phone number must contain 11 digits.");
       }
 
       if (!isValidBangladeshiPhone(cleanPhone)) {
         throw new Error("Enter a valid Bangladeshi phone number.");
       }
 
+      // --------------------------------------------------------
+      // PHOTO
+      // --------------------------------------------------------
+
+      const cleanPhoto =
+        typeof additionalData.photo === "string"
+          ? additionalData.photo.trim()
+          : "";
+
+      if (cleanPhoto && cleanPhoto.length > MAX_PHOTO_URL_LENGTH) {
+        throw new Error("Photo URL cannot exceed 2000 characters.");
+      }
+
       let firebaseUser = null;
 
       /*
-       * IMPORTANT:
-       *
-       * Set this BEFORE Firebase account creation.
-       *
-       * Firebase can immediately trigger
-       * onAuthStateChanged().
+       * Protect against onAuthStateChanged()
+       * racing with registration.
        */
       isRegisteringRef.current = true;
 
@@ -641,9 +650,6 @@ const AuthProvider = ({ children }) => {
 
         firebaseUser = result.user;
 
-        /*
-         * Store registration UID.
-         */
         registrationUidRef.current = firebaseUser.uid;
 
         // ------------------------------------------------------
@@ -655,23 +661,22 @@ const AuthProvider = ({ children }) => {
         });
 
         // ------------------------------------------------------
-        // 3. SYNC FIREBASE → MONGODB
+        // 3. SYNC WITH MONGODB
         // ------------------------------------------------------
 
         await syncUserWithBackend(firebaseUser, {
-          ...additionalData,
-
           name: cleanName,
-
-          /*
-           * Manual registration always sends
-           * a real phone number.
-           */
           phone: cleanPhone,
 
           ...(cleanPhoto
             ? {
                 photo: cleanPhoto,
+              }
+            : {}),
+
+          ...(additionalData.profile
+            ? {
+                profile: additionalData.profile,
               }
             : {}),
         });
@@ -702,12 +707,7 @@ const AuthProvider = ({ children }) => {
 
         throw error;
       } finally {
-        /*
-         * Clear registration protection
-         * only after registration flow completes.
-         */
         isRegisteringRef.current = false;
-
         registrationUidRef.current = null;
       }
     },
@@ -746,7 +746,7 @@ const AuthProvider = ({ children }) => {
         const firebaseUser = result.user;
 
         // ------------------------------------------------------
-        // 2. MONGODB SYNCHRONIZATION
+        // 2. SYNCHRONIZE BACKEND
         // ------------------------------------------------------
 
         await syncUserWithBackend(firebaseUser);
@@ -766,7 +766,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // GOOGLE LOGIN / REGISTRATION
+  // GOOGLE SIGN IN / SIGNUP
   // ==========================================================
 
   const signInWithGoogle = useCallback(
@@ -774,8 +774,8 @@ const AuthProvider = ({ children }) => {
       setAuthError(null);
 
       /*
-       * Prevent onAuthStateChanged from running
-       * an early sync without optional Google data.
+       * Prevent auth listener from performing
+       * an early synchronization.
        */
       isGoogleSigningInRef.current = true;
 
@@ -789,7 +789,7 @@ const AuthProvider = ({ children }) => {
         const firebaseUser = result.user;
 
         // ------------------------------------------------------
-        // 2. CLEAN OPTIONAL GOOGLE DATA
+        // 2. OPTIONAL NAME
         // ------------------------------------------------------
 
         const cleanName =
@@ -797,65 +797,87 @@ const AuthProvider = ({ children }) => {
             ? additionalData.name.trim()
             : "";
 
+        if (cleanName && cleanName.length > MAX_NAME_LENGTH) {
+          throw new Error("Name cannot exceed 100 characters.");
+        }
+
+        // ------------------------------------------------------
+        // 3. OPTIONAL PHONE
+        // ------------------------------------------------------
+
         const cleanPhone =
           typeof additionalData.phone === "string"
             ? additionalData.phone.trim()
             : "";
+
+        /*
+         * Google phone is optional.
+         */
+        if (cleanPhone) {
+          if (cleanPhone.length !== MAX_PHONE_LENGTH) {
+            throw new Error("Phone number must contain 11 digits.");
+          }
+
+          if (!isValidBangladeshiPhone(cleanPhone)) {
+            throw new Error("Enter a valid Bangladeshi phone number.");
+          }
+        }
+
+        // ------------------------------------------------------
+        // 4. OPTIONAL PHOTO
+        // ------------------------------------------------------
 
         const cleanPhoto =
           typeof additionalData.photo === "string"
             ? additionalData.photo.trim()
             : "";
 
-        /*
-         * Google phone is OPTIONAL.
-         *
-         * Do NOT throw when phone is empty.
-         */
-        if (cleanPhone && !isValidBangladeshiPhone(cleanPhone)) {
-          throw new Error("Enter a valid Bangladeshi phone number.");
+        if (cleanPhoto && cleanPhoto.length > MAX_PHOTO_URL_LENGTH) {
+          throw new Error("Photo URL cannot exceed 2000 characters.");
         }
 
-        const googleAdditionalData = {
-          ...(cleanName
-            ? {
-                name: cleanName,
-              }
-            : {}),
+        // ------------------------------------------------------
+        // 5. BUILD GOOGLE DATA
+        // ------------------------------------------------------
 
-          /*
-           * Only send phone when it actually exists.
-           *
-           * No phone:
-           * do not send phone.
-           *
-           * Backend will create:
-           *
-           * phone: null
-           *
-           * for a new Google user.
-           */
-          ...(cleanPhone
-            ? {
-                phone: cleanPhone,
-              }
-            : {}),
+        const googleAdditionalData = {};
 
-          ...(cleanPhoto
-            ? {
-                photo: cleanPhoto,
-              }
-            : {}),
-        };
+        if (cleanName) {
+          googleAdditionalData.name = cleanName;
+        }
+
+        /*
+         * Only send phone when provided.
+         *
+         * For a new Google user without phone,
+         * backend creates:
+         *
+         * phone: null
+         */
+        if (cleanPhone) {
+          googleAdditionalData.phone = cleanPhone;
+        }
+
+        if (cleanPhoto) {
+          googleAdditionalData.photo = cleanPhoto;
+        }
+
+        if (
+          additionalData.profile &&
+          typeof additionalData.profile === "object" &&
+          !Array.isArray(additionalData.profile)
+        ) {
+          googleAdditionalData.profile = additionalData.profile;
+        }
 
         // ------------------------------------------------------
-        // 3. MONGODB SYNCHRONIZATION
+        // 6. SYNCHRONIZE WITH MONGODB
         // ------------------------------------------------------
 
         await syncUserWithBackend(firebaseUser, googleAdditionalData);
 
         // ------------------------------------------------------
-        // 4. RETURN FIREBASE USER
+        // 7. RETURN FIREBASE USER
         // ------------------------------------------------------
 
         return firebaseUser;
@@ -863,12 +885,10 @@ const AuthProvider = ({ children }) => {
         console.error("Google authentication failed:", error);
 
         /*
-         * If the Google popup created a new Firebase account
-         * but backend synchronization failed, we intentionally
-         * do not delete the Google Firebase account here.
+         * Do NOT delete Google Firebase user.
          *
-         * This avoids destructive behavior during temporary
-         * network/backend failures.
+         * A temporary backend/network failure
+         * should not destroy the Google account.
          */
 
         if (isMountedRef.current) {
@@ -884,7 +904,7 @@ const AuthProvider = ({ children }) => {
   );
 
   // ==========================================================
-  // RESET PASSWORD
+  // PASSWORD RESET
   // ==========================================================
 
   const resetPassword = useCallback(
@@ -932,7 +952,7 @@ const AuthProvider = ({ children }) => {
 
       try {
         // ----------------------------------------------------
-        // CURRENT PROVIDER
+        // PROVIDER
         // ----------------------------------------------------
 
         const provider = getProvider(firebaseUser);
@@ -940,7 +960,7 @@ const AuthProvider = ({ children }) => {
         const isGoogleProvider = provider === "google";
 
         // ----------------------------------------------------
-        // PREPARE NAME
+        // NAME
         // ----------------------------------------------------
 
         const cleanName =
@@ -952,37 +972,32 @@ const AuthProvider = ({ children }) => {
           throw new Error("Name cannot be empty.");
         }
 
-        if (cleanName.length > 100) {
+        if (cleanName.length > MAX_NAME_LENGTH) {
           throw new Error("Name cannot exceed 100 characters.");
         }
 
         // ----------------------------------------------------
-        // PREPARE PHONE
+        // PHONE
         // ----------------------------------------------------
-
-        const hasPhoneField = Object.prototype.hasOwnProperty.call(
-          profileData,
-          "phone",
-        );
 
         const cleanPhone =
           typeof profileData.phone === "string" ? profileData.phone.trim() : "";
 
         /*
-         * If a phone value was actually provided,
-         * validate it.
+         * Validate a new phone if supplied.
          */
         if (cleanPhone) {
+          if (cleanPhone.length !== MAX_PHONE_LENGTH) {
+            throw new Error("Phone number must contain 11 digits.");
+          }
+
           if (!isValidBangladeshiPhone(cleanPhone)) {
             throw new Error("Enter a valid Bangladeshi phone number.");
           }
         }
 
         /*
-         * Manual/password users must have a phone.
-         *
-         * If the caller does not provide a new phone,
-         * use the currently stored phone.
+         * Password users must always have phone.
          */
         if (!isGoogleProvider) {
           const existingPhone =
@@ -992,17 +1007,13 @@ const AuthProvider = ({ children }) => {
             throw new Error("Phone number is required.");
           }
 
-          if (
-            !cleanPhone &&
-            existingPhone &&
-            !isValidBangladeshiPhone(existingPhone)
-          ) {
+          if (existingPhone && !isValidBangladeshiPhone(existingPhone)) {
             throw new Error("Enter a valid Bangladeshi phone number.");
           }
         }
 
         // ----------------------------------------------------
-        // PREPARE PHOTO
+        // PHOTO
         // ----------------------------------------------------
 
         const cleanPhoto =
@@ -1010,12 +1021,12 @@ const AuthProvider = ({ children }) => {
             ? profileData.photo.trim()
             : cleanString(firebaseUser.photoURL);
 
-        if (cleanPhoto && cleanPhoto.length > 2000) {
+        if (cleanPhoto && cleanPhoto.length > MAX_PHOTO_URL_LENGTH) {
           throw new Error("Photo URL cannot exceed 2000 characters.");
         }
 
         // ----------------------------------------------------
-        // PREPARE PROFILE
+        // PROFILE
         // ----------------------------------------------------
 
         const cleanProfile =
@@ -1026,16 +1037,13 @@ const AuthProvider = ({ children }) => {
             : undefined;
 
         // ----------------------------------------------------
-        // 1. UPDATE FIREBASE PROFILE
+        // UPDATE FIREBASE
         // ----------------------------------------------------
 
         const firebaseProfileData = {
           displayName: cleanName,
         };
 
-        /*
-         * Only send photo when an actual value exists.
-         */
         if (cleanPhoto) {
           firebaseProfileData.photoURL = cleanPhoto;
         }
@@ -1043,7 +1051,7 @@ const AuthProvider = ({ children }) => {
         await updateProfile(firebaseUser, firebaseProfileData);
 
         // ----------------------------------------------------
-        // 2. UPDATE MONGODB
+        // BUILD BACKEND PAYLOAD
         // ----------------------------------------------------
 
         const payload = {
@@ -1051,24 +1059,14 @@ const AuthProvider = ({ children }) => {
         };
 
         /*
-         * IMPORTANT:
-         *
-         * Only send phone when an actual phone exists.
-         *
-         * This means:
-         *
-         * Google user + no phone
-         *      ↓
-         * phone is omitted
-         *      ↓
-         * backend preserves existing phone.
-         *
-         * Therefore an existing Google phone
-         * can never be accidentally replaced by null.
+         * New phone only.
          */
         if (cleanPhone) {
           payload.phone = cleanPhone;
         } else if (!isGoogleProvider) {
+          /*
+           * Preserve existing password-user phone.
+           */
           const existingPhone =
             typeof user?.phone === "string" ? user.phone.trim() : "";
 
@@ -1078,18 +1076,22 @@ const AuthProvider = ({ children }) => {
         }
 
         /*
-         * Avoid sending empty photo.
+         * Photo only when available.
          */
         if (cleanPhoto) {
           payload.photo = cleanPhoto;
         }
 
         /*
-         * Only send profile when provided.
+         * Profile only when supplied.
          */
         if (cleanProfile !== undefined) {
           payload.profile = cleanProfile;
         }
+
+        // ----------------------------------------------------
+        // UPDATE MONGODB
+        // ----------------------------------------------------
 
         const response = await axiosSecure.patch("/auth/me", payload);
 
@@ -1100,7 +1102,7 @@ const AuthProvider = ({ children }) => {
         }
 
         // ----------------------------------------------------
-        // 3. BUILD UPDATED APPLICATION USER
+        // BUILD APPLICATION USER
         // ----------------------------------------------------
 
         const databaseUser = response.data?.user || {};
@@ -1109,6 +1111,7 @@ const AuthProvider = ({ children }) => {
 
         if (isMountedRef.current) {
           setUser(applicationUser);
+          setAuthError(null);
         }
 
         return applicationUser;
@@ -1141,33 +1144,15 @@ const AuthProvider = ({ children }) => {
     }
 
     try {
-      // ----------------------------------------------------
-      // GET USER FROM MONGODB
-      // ----------------------------------------------------
-
       let databaseUser = await getCurrentUser();
 
-      // ----------------------------------------------------
-      // RECREATE / SYNC IF MISSING
-      // ----------------------------------------------------
-
+      /*
+       * Recreate/synchronize MongoDB user
+       * if it is missing.
+       */
       if (!databaseUser) {
-        /*
-         * If the MongoDB user does not exist,
-         * synchronize it.
-         *
-         * For Google:
-         * backend can create phone: null.
-         *
-         * For manual users:
-         * backend requires a phone.
-         */
         return await syncUserWithBackend(firebaseUser);
       }
-
-      // ----------------------------------------------------
-      // BUILD APPLICATION USER
-      // ----------------------------------------------------
 
       const applicationUser = buildUser(firebaseUser, databaseUser);
 
@@ -1196,30 +1181,20 @@ const AuthProvider = ({ children }) => {
     setAuthError(null);
 
     try {
-      // ------------------------------------------------------
-      // FIREBASE SIGN OUT
-      // ------------------------------------------------------
-
       await signOut(auth);
-
-      // ------------------------------------------------------
-      // CLEAR LOCAL STATE
-      // ------------------------------------------------------
 
       if (isMountedRef.current) {
         setUser(null);
       }
 
-      // ------------------------------------------------------
-      // CLEAR SYNCHRONIZATION CACHE
-      // ------------------------------------------------------
-
+      /*
+       * Clear synchronization cache.
+       */
       syncPromiseRef.current.clear();
 
-      // ------------------------------------------------------
-      // CLEAR AUTH FLOW REFS
-      // ------------------------------------------------------
-
+      /*
+       * Reset auth flow refs.
+       */
       isRegisteringRef.current = false;
 
       registrationUidRef.current = null;
@@ -1241,8 +1216,10 @@ const AuthProvider = ({ children }) => {
   // ==========================================================
 
   const clearUser = useCallback(() => {
-    setUser(null);
-    setAuthError(null);
+    if (isMountedRef.current) {
+      setUser(null);
+      setAuthError(null);
+    }
 
     syncPromiseRef.current.clear();
 
@@ -1266,7 +1243,7 @@ const AuthProvider = ({ children }) => {
       }
 
       // --------------------------------------------------
-      // USER LOGGED OUT
+      // LOGGED OUT
       // --------------------------------------------------
 
       if (!firebaseUser) {
@@ -1278,13 +1255,9 @@ const AuthProvider = ({ children }) => {
       }
 
       // --------------------------------------------------
-      // EMAIL REGISTRATION IS RUNNING
+      // EMAIL REGISTRATION IN PROGRESS
       // --------------------------------------------------
 
-      /*
-       * Do not perform automatic synchronization
-       * while usersignup() is handling registration.
-       */
       if (
         isRegisteringRef.current ||
         registrationUidRef.current === firebaseUser.uid
@@ -1295,16 +1268,9 @@ const AuthProvider = ({ children }) => {
       }
 
       // --------------------------------------------------
-      // GOOGLE POPUP LOGIN IS RUNNING
+      // GOOGLE SIGN-IN IN PROGRESS
       // --------------------------------------------------
 
-      /*
-       * Do not let the auth listener race with
-       * signInWithGoogle().
-       *
-       * signInWithGoogle() will explicitly synchronize
-       * the Firebase user with MongoDB.
-       */
       if (isGoogleSigningInRef.current) {
         setLoading(false);
 
@@ -1334,10 +1300,9 @@ const AuthProvider = ({ children }) => {
         }
 
         /*
-         * Do not automatically sign out Firebase.
-         *
-         * A backend/network problem should not
-         * destroy the Firebase session.
+         * Do not automatically sign out
+         * Firebase because of a backend/network
+         * failure.
          */
         setUser(null);
         setAuthError(error);
@@ -1354,10 +1319,10 @@ const AuthProvider = ({ children }) => {
       unsubscribe();
 
       /*
-       * Do not clear syncPromiseRef here.
+       * Do NOT clear syncPromiseRef here.
        *
-       * React StrictMode can temporarily unmount
-       * and remount components during development.
+       * React StrictMode may temporarily unmount
+       * and remount the provider during development.
        */
     };
   }, [syncUserWithBackend]);
