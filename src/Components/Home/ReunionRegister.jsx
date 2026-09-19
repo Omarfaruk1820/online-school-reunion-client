@@ -1,56 +1,59 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+
 import {
   FiArrowLeft,
   FiArrowRight,
+  FiAward,
   FiCalendar,
   FiCheck,
   FiCheckCircle,
   FiChevronDown,
   FiClock,
   FiGift,
+  FiInfo,
   FiLoader,
-  FiMail,
   FiMapPin,
   FiPhone,
   FiShield,
   FiUser,
   FiUsers,
-  FiXCircle,
 } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
-import { onAuthStateChanged } from "firebase/auth";
 
-import { auth } from "../../Auth/firebase.config";
-import axiosPublic from "../../hooks/axiosPublic";
+import { toast } from "react-hot-toast";
+
+import useAuth from "../../hooks/useAuth";
 import axiosSecure from "../../hooks/axiosSecure";
 
-const STEPS = [
-  {
-    id: 1,
-    title: "Personal Information",
-    shortTitle: "Personal",
-  },
-  {
-    id: 2,
-    title: "School Information",
-    shortTitle: "School",
-  },
-  {
-    id: 3,
-    title: "Reunion Package",
-    shortTitle: "Package",
-  },
-  {
-    id: 4,
-    title: "Confirmation",
-    shortTitle: "Confirm",
-  },
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+const API_EVENT_URL = "/registrations";
+
+const PHONE_REGEX = /^01[3-9]\d{8}$/;
+
+const CLASS_LEVELS = [
+  { value: "6", label: "Class 6" },
+  { value: "7", label: "Class 7" },
+  { value: "8", label: "Class 8" },
+  { value: "9", label: "Class 9" },
+  { value: "10", label: "Class 10" },
 ];
 
-const CLASS_LEVELS = ["6", "7", "8", "9", "10"];
+const STUDENT_TYPES = [
+  {
+    value: "current",
+    label: "Current Student",
+    description: "I am currently studying at the school.",
+  },
+  {
+    value: "alumni",
+    label: "Alumni / Ex-Student",
+    description: "I have completed my school education.",
+  },
+];
 
 const DEPARTMENTS = [
   {
@@ -71,242 +74,160 @@ const DEPARTMENTS = [
   },
 ];
 
-const TSHIRT_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL"];
+const TSHIRT_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL"];
 
-const formatDate = (value) => {
-  if (!value) return "Date not available";
+const DEFAULT_EVENT = {
+  _id: "",
+  title: "Grand School Reunion 2027",
+  shortTitle: "Grand Reunion 2027",
+  edition: "76 Years Celebration",
+  eventDate: "2027-02-22",
+  startTime: "09:00",
+  endTime: "17:00",
+  venue: "Our Beloved School Campus",
+  registrationOpen: true,
+  paymentRequired: false,
+  description:
+    "Join your classmates, friends, teachers, and alumni for a memorable school reunion.",
+  packages: [],
+};
 
-  const stringValue = String(value);
+// ============================================================
+// HELPERS
+// ============================================================
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
-    const [year, month, day] = stringValue.split("-").map(Number);
-    const date = new Date(year, month - 1, day);
-
-    if (Number.isNaN(date.getTime())) {
-      return "Date not available";
-    }
-
-    return date.toLocaleDateString("en-BD", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+const formatDate = (dateValue) => {
+  if (!dateValue) {
+    return "Date will be announced";
   }
 
-  const date = new Date(value);
+  const date = new Date(dateValue);
 
   if (Number.isNaN(date.getTime())) {
-    return "Date not available";
+    return dateValue;
   }
 
-  return date.toLocaleDateString("en-BD", {
-    year: "numeric",
-    month: "long",
+  return new Intl.DateTimeFormat("en-BD", {
+    weekday: "long",
     day: "numeric",
-  });
+    month: "long",
+    year: "numeric",
+  }).format(date);
 };
 
-const formatTime = (value) => {
-  if (!value) return "";
+const normalizePackages = (event) => {
+  const possiblePackages =
+    event?.packages || event?.giftPackages || event?.packageOptions || [];
 
-  const stringValue = String(value).trim();
-
-  if (/am|pm/i.test(stringValue)) {
-    return stringValue;
+  if (!Array.isArray(possiblePackages)) {
+    return [];
   }
 
-  const match = stringValue.match(/^(\d{1,2}):(\d{2})/);
-
-  if (!match) {
-    return stringValue;
-  }
-
-  let hours = Number(match[1]);
-  const minutes = match[2];
-
-  const period = hours >= 12 ? "PM" : "AM";
-
-  hours = hours % 12 || 12;
-
-  return `${hours}:${minutes} ${period}`;
+  return possiblePackages.map((item) => ({
+    id: item?.id || item?.packageId || item?._id || "",
+    name: item?.name || item?.title || "Reunion Package",
+    description: item?.description || "Official reunion registration package.",
+    items: Array.isArray(item?.items) ? item.items : [],
+    price:
+      typeof item?.price === "number"
+        ? item.price
+        : typeof item?.amount === "number"
+          ? item.amount
+          : null,
+    active: item?.active !== false,
+  }));
 };
 
-const getEventTime = (event) => {
-  if (!event) return "Time not available";
+const getRegistrationErrorMessage = (error) => {
+  const status = error?.response?.status;
+  const code = error?.response?.data?.code;
+  const message = error?.response?.data?.message;
 
-  if (event.eventTime) {
-    return event.eventTime;
+  if (status === 401 || code === "auth/token-missing") {
+    return "Your login session has expired. Please sign in again.";
   }
 
-  const start =
-    event.startTime || event.eventStartTime || event.start || event.eventStart;
-
-  const end =
-    event.endTime || event.eventEndTime || event.end || event.eventEnd;
-
-  if (start && end) {
-    return `${formatTime(start)} – ${formatTime(end)}`;
+  if (status === 403) {
+    return (
+      message || "You are not allowed to submit this reunion registration."
+    );
   }
 
-  if (start) {
-    return formatTime(start);
+  if (status === 404) {
+    return message || "The reunion event could not be found.";
   }
 
-  return "Time not available";
-};
+  if (status === 409) {
+    return message || "You have already registered for this reunion.";
+  }
 
-const getEventId = (event) => {
-  if (!event) return "";
+  if (status === 422) {
+    return message || "Please check your registration information.";
+  }
+
+  if (status >= 500) {
+    return "Server error. Please try again later.";
+  }
 
   return (
-    event._id?.toString?.() || event._id || event.id || event.eventId || ""
+    message || error?.message || "Unable to complete reunion registration."
   );
 };
 
-const getPackageId = (item) => {
-  if (!item) return "";
-
-  return item.id || item.packageId || item._id?.toString?.() || item._id || "";
-};
-
-const getPackages = (event) => {
-  if (!event) return [];
-
-  if (Array.isArray(event.packages)) {
-    return event.packages;
-  }
-
-  if (Array.isArray(event.packageOptions)) {
-    return event.packageOptions;
-  }
-
-  if (Array.isArray(event.packageList)) {
-    return event.packageList;
-  }
-
-  if (event.package) {
-    return [event.package];
-  }
-
-  return [];
-};
-
-const isEventObject = (value) => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  return Boolean(
-    value._id ||
-    value.id ||
-    value.eventId ||
-    value.eventDate ||
-    value.title ||
-    value.name ||
-    value.registrationOpen !== undefined ||
-    Array.isArray(value.packages),
-  );
-};
-
-const extractEvent = (data) => {
-  if (!data) return null;
-
-  if (isEventObject(data)) {
-    return data;
-  }
-
-  if (isEventObject(data.event)) {
-    return data.event;
-  }
-
-  if (isEventObject(data.reunion)) {
-    return data.reunion;
-  }
-
-  if (isEventObject(data.data)) {
-    return data.data;
-  }
-
-  if (isEventObject(data.data?.event)) {
-    return data.data.event;
-  }
-
-  if (isEventObject(data.data?.reunion)) {
-    return data.data.reunion;
-  }
-
-  return null;
-};
-
-const getApiErrorMessage = (error) => {
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    "Something went wrong. Please try again."
-  );
-};
-
-const getRegistrationResult = (data) => {
-  if (!data) return null;
-
-  if (data.registration) {
-    return data.registration;
-  }
-
-  if (data.data?.registration) {
-    return data.data.registration;
-  }
-
-  if (data.data) {
-    return data.data;
-  }
-
-  return data;
-};
-
-const getRegistrationId = (data) => {
-  const registration = getRegistrationResult(data);
-
-  return (
-    registration?._id?.toString?.() ||
-    registration?._id ||
-    registration?.id ||
-    registration?.registrationId ||
-    data?.registrationId ||
-    ""
-  );
-};
+// ============================================================
+// COMPONENT
+// ============================================================
 
 const ReunionRegister = () => {
   const navigate = useNavigate();
 
+  const { user, loading: authLoading } = useAuth();
+
+  // ==========================================================
+  // LOCAL STATE
+  // ==========================================================
+
+  const [event, setEvent] = useState(DEFAULT_EVENT);
+  const [eventLoading, setEventLoading] = useState(true);
+  const [eventError, setEventError] = useState("");
+
+  const [submitLoading, setSubmitLoading] = useState(false);
+
   const [currentStep, setCurrentStep] = useState(1);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [registrationSuccess, setRegistrationSuccess] = useState(null);
+
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+
+  const [registrationResult, setRegistrationResult] = useState(null);
+
+  // ==========================================================
+  // FORM
+  // ==========================================================
 
   const {
     register,
     handleSubmit,
-    setValue,
     watch,
     trigger,
+    getValues,
     formState: { errors },
   } = useForm({
     mode: "onChange",
+
     defaultValues: {
-      name: "",
+      participantName: "",
       email: "",
       phone: "",
       district: "",
       city: "",
+
       studentType: "",
       classLevel: "",
       batchYear: "",
       department: "",
+
       packageId: "",
       tshirtSize: "",
+
       agreeToRules: false,
     },
   });
@@ -315,255 +236,135 @@ const ReunionRegister = () => {
   const classLevel = watch("classLevel");
   const selectedPackageId = watch("packageId");
   const tshirtSize = watch("tshirtSize");
-  const agreeToRules = watch("agreeToRules");
 
-  /*
-   * ---------------------------------------------------------
-   * Firebase authenticated user
-   * ---------------------------------------------------------
-   */
+  const requiresDepartment = classLevel === "9" || classLevel === "10";
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user || null);
-      setAuthLoading(false);
+  // ==========================================================
+  // PACKAGES
+  // ==========================================================
 
-      if (user) {
-        if (user.email) {
-          setValue("email", user.email, {
-            shouldValidate: true,
-          });
-        }
+  const packages = useMemo(() => {
+    const normalized = normalizePackages(event);
 
-        if (user.displayName) {
-          setValue("name", user.displayName, {
-            shouldValidate: true,
-          });
-        }
-      } else {
-        setValue("email", "");
-        setValue("name", "");
-      }
-    });
-
-    return () => unsubscribe();
-  }, [setValue]);
-
-  /*
-   * ---------------------------------------------------------
-   * Department reset
-   * ---------------------------------------------------------
-   */
-
-  useEffect(() => {
-    if (classLevel !== "9" && classLevel !== "10") {
-      setValue("department", "");
-    }
-  }, [classLevel, setValue]);
-
-  /*
-   * ---------------------------------------------------------
-   * Load active reunion
-   * ---------------------------------------------------------
-   */
-
-  const {
-    data: reunionResponse,
-    isLoading: reunionLoading,
-    isError: reunionError,
-    error: reunionQueryError,
-    refetch: refetchReunion,
-  } = useQuery({
-    queryKey: ["registration-event"],
-
-    queryFn: async () => {
-      const response = await axiosPublic.get("/registrations");
-
-      return response.data;
-    },
-
-    retry: 1,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const reunion = useMemo(() => {
-    return extractEvent(reunionResponse);
-  }, [reunionResponse]);
-
-  const eventId = useMemo(() => {
-    return getEventId(reunion);
-  }, [reunion]);
-
-  const eventPackages = useMemo(() => {
-    return getPackages(reunion);
-  }, [reunion]);
-
-  /*
-   * ---------------------------------------------------------
-   * Default package
-   * ---------------------------------------------------------
-   */
-
-  const defaultPackageId = useMemo(() => {
-    if (!reunion) return "";
-
-    if (reunion.packageId) {
-      return reunion.packageId;
-    }
-
-    if (reunion.package) {
-      return getPackageId(reunion.package);
-    }
-
-    if (eventPackages.length > 0) {
-      return getPackageId(eventPackages[0]);
-    }
-
-    return "";
-  }, [reunion, eventPackages]);
-
-  useEffect(() => {
-    if (defaultPackageId && !selectedPackageId) {
-      setValue("packageId", String(defaultPackageId), {
-        shouldValidate: true,
-      });
-    }
-  }, [defaultPackageId, selectedPackageId, setValue]);
-
-  /*
-   * ---------------------------------------------------------
-   * Registration status
-   * ---------------------------------------------------------
-   */
-
-  const registrationDeadlinePassed = useMemo(() => {
-    if (!reunion?.registrationDeadline) {
-      return false;
-    }
-
-    const deadline = new Date(reunion.registrationDeadline);
-
-    if (Number.isNaN(deadline.getTime())) {
-      return false;
-    }
-
-    return Date.now() > deadline.getTime();
-  }, [reunion]);
-
-  const isRegistrationClosed =
-    reunion?.registrationOpen === false ||
-    reunion?.isRegistrationOpen === false ||
-    reunion?.registrationStatus === "closed" ||
-    registrationDeadlinePassed;
-
-  /*
-   * ---------------------------------------------------------
-   * Selected package
-   * ---------------------------------------------------------
-   */
+    return normalized.filter((item) => item.active !== false);
+  }, [event]);
 
   const selectedPackage = useMemo(() => {
-    if (!selectedPackageId) {
-      return null;
+    return packages.find((item) => item.id === selectedPackageId);
+  }, [packages, selectedPackageId]);
+
+  // ==========================================================
+  // AUTH USER → FORM DEFAULTS
+  // ==========================================================
+
+  useEffect(() => {
+    if (!user) {
+      return;
     }
 
-    return (
-      eventPackages.find(
-        (item) => String(getPackageId(item)) === String(selectedPackageId),
-      ) || null
-    );
-  }, [eventPackages, selectedPackageId]);
+    // React Hook Form setValue is intentionally avoided here
+    // so existing user-entered values are not overwritten.
+  }, [user]);
 
-  /*
-   * ---------------------------------------------------------
-   * Registration mutation
-   * ---------------------------------------------------------
-   */
+  // ==========================================================
+  // LOAD ACTIVE REUNION EVENT
+  // ==========================================================
 
-  const registrationMutation = useMutation({
-    mutationFn: async (payload) => {
-      const response = await axiosSecure.post(
-        "/registrations/register",
-        payload,
-      );
+  useEffect(() => {
+    let mounted = true;
 
-      return response.data;
-    },
+    const loadEvent = async () => {
+      setEventLoading(true);
+      setEventError("");
 
-    onSuccess: (response) => {
-      const registration = getRegistrationResult(response);
-      const registrationId = getRegistrationId(response);
+      try {
+        const response = await axiosSecure.get(API_EVENT_URL);
 
-      setRegistrationSuccess({
-        ...(registration || {}),
-        registrationId,
-      });
+        if (!mounted) {
+          return;
+        }
 
-      toast.success("Registration completed successfully!");
-    },
+        const eventData = response?.data?.data || response?.data?.event;
 
-    onError: (error) => {
-      const status = error?.response?.status;
+        if (!eventData) {
+          throw new Error(
+            "No active reunion event was returned by the server.",
+          );
+        }
 
-      if (status === 401) {
-        toast.error("Your login session has expired. Please login again.");
-
-        navigate("/login", {
-          state: {
-            from: "/reunion-register",
-          },
+        setEvent({
+          ...DEFAULT_EVENT,
+          ...eventData,
         });
+      } catch (error) {
+        console.error("Failed to load reunion event:", error);
 
-        return;
+        if (!mounted) {
+          return;
+        }
+
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Unable to load reunion information.";
+
+        setEventError(message);
+      } finally {
+        if (mounted) {
+          setEventLoading(false);
+        }
       }
+    };
 
-      if (status === 403) {
-        toast.error(
-          getApiErrorMessage(error) || "Registration is currently closed.",
-        );
-
-        return;
-      }
-
-      if (status === 409) {
-        toast.error(
-          getApiErrorMessage(error) ||
-            "You have already registered for this reunion.",
-        );
-
-        return;
-      }
-
-      toast.error(getApiErrorMessage(error));
-    },
-  });
-
-  /*
-   * ---------------------------------------------------------
-   * Step validation
-   * ---------------------------------------------------------
-   */
-
-  const validateCurrentStep = async () => {
-    if (currentStep === 1) {
-      return trigger(["name", "email", "phone", "district", "city"]);
+    if (!authLoading && user) {
+      loadEvent();
     }
 
-    if (currentStep === 2) {
-      const fields = ["studentType", "classLevel", "batchYear"];
+    return () => {
+      mounted = false;
+    };
+  }, [authLoading, user]);
 
-      if (classLevel === "9" || classLevel === "10") {
-        fields.push("department");
-      }
+  // ==========================================================
+  // AUTH REDIRECT
+  // ==========================================================
 
-      return trigger(fields);
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/login", {
+        replace: true,
+        state: {
+          from: {
+            pathname: "/reunionregister",
+          },
+        },
+      });
+    }
+  }, [authLoading, user, navigate]);
+
+  // ==========================================================
+  // STEP VALIDATION
+  // ==========================================================
+
+  const validateStep = async (step) => {
+    if (step === 1) {
+      return trigger(["participantName", "email", "phone", "district", "city"]);
     }
 
-    if (currentStep === 3) {
+    if (step === 2) {
+      return trigger([
+        "studentType",
+        "classLevel",
+        "batchYear",
+        ...(requiresDepartment ? ["department"] : []),
+      ]);
+    }
+
+    if (step === 3) {
       return trigger(["packageId", "tshirtSize"]);
     }
 
-    if (currentStep === 4) {
+    if (step === 4) {
       return trigger(["agreeToRules"]);
     }
 
@@ -571,1199 +372,1532 @@ const ReunionRegister = () => {
   };
 
   const handleNext = async () => {
-    const isValid = await validateCurrentStep();
+    const valid = await validateStep(currentStep);
 
-    if (!isValid) {
-      toast.error("Please complete all required fields.");
+    if (!valid) {
       return;
     }
 
-    if (currentStep < STEPS.length) {
-      setCurrentStep((previous) => previous + 1);
+    setCurrentStep((previous) => Math.min(previous + 1, 4));
 
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    }
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const handlePrevious = () => {
-    if (currentStep > 1) {
-      setCurrentStep((previous) => previous - 1);
+    setCurrentStep((previous) => Math.max(previous - 1, 1));
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
+
+  // ==========================================================
+  // SUBMIT
+  // ==========================================================
+
+  const handleRegistration = async (data) => {
+    if (submitLoading) {
+      return;
+    }
+
+    if (!event?._id) {
+      toast.error("Reunion event information is unavailable.");
+      return;
+    }
+
+    if (event.registrationOpen !== true) {
+      toast.error("Reunion registration is currently closed.");
+      return;
+    }
+
+    setSubmitLoading(true);
+
+    try {
+      const payload = {
+        participantName: data.participantName.trim(),
+
+        // Backend verifies this against Firebase token email.
+        email:
+          user?.email?.trim().toLowerCase() || data.email.trim().toLowerCase(),
+
+        phone: data.phone.trim(),
+
+        district: data.district.trim(),
+
+        city: data.city.trim(),
+
+        studentType: data.studentType,
+
+        classLevel: data.classLevel,
+
+        batchYear: Number(data.batchYear),
+
+        department: requiresDepartment ? data.department : null,
+
+        eventId: event._id,
+
+        packageId: data.packageId,
+
+        tshirtSize: data.tshirtSize,
+
+        agreeToRules: Boolean(data.agreeToRules),
+      };
+
+      const response = await axiosSecure.post(
+        "/registrations/register",
+        payload,
+      );
+
+      const result = response?.data?.data || {};
+
+      setRegistrationResult(result);
+      setRegistrationComplete(true);
+
+      toast.success("Your reunion registration was completed successfully!", {
+        position: "top-right",
+        duration: 4000,
+      });
 
       window.scrollTo({
         top: 0,
         behavior: "smooth",
       });
-    }
-  };
+    } catch (error) {
+      console.error("Reunion registration error:", error);
 
-  /*
-   * ---------------------------------------------------------
-   * Submit
-   * ---------------------------------------------------------
-   */
+      const message = getRegistrationErrorMessage(error);
 
-  const onSubmit = (formData) => {
-    if (!currentUser) {
-      toast.error("Please login before registering.");
-
-      navigate("/login", {
-        state: {
-          from: "/reunion-register",
-        },
+      toast.error(message, {
+        position: "top-right",
+        duration: 5000,
       });
 
-      return;
+      // If already registered, the user should be able
+      // to inspect their existing registration.
+      if (error?.response?.status === 409) {
+        setTimeout(() => {
+          navigate("/dashboard/student");
+        }, 1500);
+      }
+    } finally {
+      setSubmitLoading(false);
     }
-
-    if (!eventId) {
-      toast.error("Reunion event information is unavailable.");
-
-      return;
-    }
-
-    if (isRegistrationClosed) {
-      toast.error("Registration is currently closed.");
-      return;
-    }
-
-    if (!agreeToRules) {
-      toast.error("Please agree to the reunion rules.");
-      return;
-    }
-
-    const authenticatedEmail = currentUser.email?.trim().toLowerCase();
-
-    if (!authenticatedEmail) {
-      toast.error("Your account does not have a valid email address.");
-
-      return;
-    }
-
-    /*
-     * Use Firebase authenticated email instead of trusting
-     * the submitted form email.
-     */
-    const participantEmail = authenticatedEmail;
-
-    /*
-     * Make sure class 9/10 has a department.
-     */
-    if (
-      (formData.classLevel === "9" || formData.classLevel === "10") &&
-      !formData.department
-    ) {
-      toast.error("Please select your department.");
-
-      setCurrentStep(2);
-
-      return;
-    }
-
-    /*
-     * Package is required.
-     */
-    if (!formData.packageId) {
-      toast.error("Please select a reunion package.");
-
-      setCurrentStep(3);
-
-      return;
-    }
-
-    /*
-     * T-shirt size is required.
-     */
-    if (!formData.tshirtSize) {
-      toast.error("Please select your T-shirt size.");
-
-      setCurrentStep(3);
-
-      return;
-    }
-
-    const payload = {
-      participant: {
-        name: formData.name.trim(),
-        email: participantEmail,
-        phone: formData.phone.trim(),
-        district: formData.district.trim(),
-        city: formData.city.trim(),
-      },
-
-      schoolInfo: {
-        studentType: formData.studentType,
-        classLevel: formData.classLevel,
-        batchYear: Number(formData.batchYear),
-
-        department:
-          formData.classLevel === "9" || formData.classLevel === "10"
-            ? formData.department
-            : null,
-      },
-
-      reunion: {
-        eventId,
-
-        packageId: formData.packageId,
-
-        tShirt: {
-          size: formData.tshirtSize,
-        },
-      },
-
-      consent: {
-        agreedToRules: true,
-      },
-    };
-
-    registrationMutation.mutate(payload);
   };
 
-  /*
-   * ---------------------------------------------------------
-   * Loading
-   * ---------------------------------------------------------
-   */
+  // ==========================================================
+  // LOADING
+  // ==========================================================
 
-  if (authLoading || reunionLoading) {
+  if (authLoading || eventLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-            <FiLoader className="h-8 w-8 animate-spin text-indigo-600" />
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+            <FiLoader className="h-6 w-6 animate-spin text-blue-600" />
           </div>
 
-          <h2 className="mt-5 text-xl font-bold text-slate-900">
-            Loading registration
+          <h2 className="mt-5 text-lg font-bold text-slate-900">
+            Preparing your reunion registration
           </h2>
 
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Please wait while we prepare the reunion registration form.
+          <p className="mt-2 text-sm text-slate-500">
+            Please wait while we load the reunion information.
           </p>
         </div>
-      </div>
+      </main>
     );
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Login required
-   * ---------------------------------------------------------
-   */
+  // ==========================================================
+  // NOT AUTHENTICATED
+  // ==========================================================
 
-  if (!currentUser) {
+  if (!user) {
+    return null;
+  }
+
+  // ==========================================================
+  // EVENT ERROR
+  // ==========================================================
+
+  if (eventError) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
-          <div className="w-full rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-xl sm:p-10 md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-              <FiUsers className="h-8 w-8 text-indigo-600" />
+      <main className="min-h-screen bg-slate-50 px-4 py-10">
+        <div className="mx-auto max-w-xl">
+          <div className="rounded-3xl border border-red-200 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+              <FiInfo className="h-6 w-6" />
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 sm:text-3xl">
-              Login Required
+            <h1 className="mt-5 text-2xl font-bold text-slate-900">
+              Reunion information unavailable
             </h1>
 
-            <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600 sm:text-base">
-              You need to login before registering for the school reunion.
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              {eventError}
             </p>
 
-            <button
-              type="button"
-              onClick={() =>
-                navigate("/login", {
-                  state: {
-                    from: "/reunion-register",
-                  },
-                })
-              }
-              className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 sm:w-auto"
-            >
-              Login to Continue
-              <FiArrowRight />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                Try Again
+              </button>
 
-  /*
-   * ---------------------------------------------------------
-   * Reunion unavailable
-   * ---------------------------------------------------------
-   */
-
-  if (reunionError || !reunion) {
-    return (
-      <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
-          <div className="w-full rounded-3xl border border-red-100 bg-white p-7 text-center shadow-xl sm:p-10 md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
-              <FiXCircle className="h-8 w-8 text-red-600" />
-            </div>
-
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 sm:text-3xl">
-              Reunion Information Unavailable
-            </h1>
-
-            <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600 sm:text-base">
-              We could not load the active reunion information right now.
-            </p>
-
-            {reunionQueryError?.response?.data?.message && (
-              <p className="mt-3 text-sm text-red-500">
-                {reunionQueryError.response.data.message}
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={() => refetchReunion()}
-              className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 sm:w-auto"
-            >
-              Try Again
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /*
-   * ---------------------------------------------------------
-   * Registration successful
-   * ---------------------------------------------------------
-   */
-
-  if (registrationSuccess) {
-    const registrationId =
-      registrationSuccess.registrationId ||
-      registrationSuccess.id ||
-      registrationSuccess._id;
-
-    return (
-      <div className="min-h-screen bg-slate-50 px-4 py-10 sm:py-12">
-        <div className="mx-auto flex min-h-[70vh] max-w-2xl items-center justify-center">
-          <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 px-6 py-10 text-center text-white sm:px-10 md:py-12">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/15">
-                <FiCheckCircle className="h-11 w-11" />
-              </div>
-
-              <h1 className="mt-5 text-3xl font-bold sm:text-4xl">
-                Registration Successful!
-              </h1>
-
-              <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-emerald-50 sm:text-base">
-                Thank you for registering for our school reunion. We look
-                forward to seeing you at the event.
-              </p>
-            </div>
-
-            <div className="p-6 sm:p-8 md:p-10">
-              {registrationId && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center sm:p-6">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Your Registration ID
-                  </p>
-
-                  <p className="mt-3 break-all text-xl font-bold tracking-wide text-indigo-600 sm:text-2xl">
-                    {registrationId}
-                  </p>
-
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Please save this ID for future reference.
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-7 grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => navigate("/dashboard/registrations")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-indigo-700 sm:text-base"
-                >
-                  View My Registration
-                  <FiArrowRight />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => navigate("/")}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:text-base"
-                >
-                  Back to Home
-                </button>
-              </div>
+              <Link
+                to="/"
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Back to Home
+              </Link>
             </div>
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Registration closed
-   * ---------------------------------------------------------
-   */
+  // ==========================================================
+  // REGISTRATION COMPLETE
+  // ==========================================================
 
-  if (isRegistrationClosed) {
+  if (registrationComplete) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-12">
-        <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
-          <div className="w-full rounded-3xl border border-amber-100 bg-white p-7 text-center shadow-xl sm:p-10 md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50">
-              <FiClock className="h-8 w-8 text-amber-600" />
+      <main className="min-h-screen bg-slate-50 px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[80vh] max-w-2xl items-center justify-center">
+          <div className="w-full rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-[0_25px_80px_-35px_rgba(15,23,42,0.35)] sm:p-10">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <FiCheckCircle className="h-10 w-10" />
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 sm:text-3xl">
-              Registration Closed
-            </h1>
-
-            <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-              Registration for this reunion is currently closed.
+            <p className="mt-6 text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">
+              Registration Complete
             </p>
 
-            {reunion.registrationDeadline && (
-              <div className="mt-5 rounded-2xl bg-amber-50 p-4">
-                <p className="text-sm text-amber-800">Registration deadline</p>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+              You're officially registered!
+            </h1>
 
-                <p className="mt-1 font-bold text-amber-900">
-                  {formatDate(reunion.registrationDeadline)}
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-slate-500 sm:text-base">
+              Thank you for registering for the{" "}
+              <span className="font-semibold text-slate-700">
+                {event.title}
+              </span>
+              . We look forward to welcoming you back to our beloved school.
+            </p>
+
+            {registrationResult?.registrationId && (
+              <div className="mx-auto mt-7 max-w-sm rounded-2xl border border-blue-100 bg-blue-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                  Registration ID
+                </p>
+
+                <p className="mt-2 break-all text-xl font-bold tracking-wide text-slate-900">
+                  {registrationResult.registrationId}
+                </p>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  Please keep this ID for future reference.
                 </p>
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="mt-7 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white transition hover:bg-indigo-700 sm:w-auto"
-            >
-              Back to Home
-            </button>
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <Link
+                to="/dashboard/student"
+                className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                Go to Dashboard
+                <FiArrowRight />
+              </Link>
+
+              <Link
+                to="/"
+                className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Back to Home
+              </Link>
+            </div>
+
+            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left">
+              <FiShield className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+
+              <p className="text-xs leading-5 text-slate-500">
+                Your reunion registration information has been securely
+                submitted to the school reunion system.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Main registration form
-   * ---------------------------------------------------------
-   */
+  // ==========================================================
+  // MAIN UI
+  // ==========================================================
 
   return (
-    <div className="min-h-screen bg-slate-50 px-3 py-6 sm:px-4 sm:py-8 lg:py-12">
-      <div className="mx-auto w-full max-w-6xl">
-        {/* Header */}
-        <div className="mb-7 text-center sm:mb-9">
-          <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700 sm:text-sm">
-            <FiUsers />
-            School Reunion Registration
+    <main className="min-h-screen bg-slate-50">
+      {/* ======================================================
+          HERO / EVENT HEADER
+      ======================================================= */}
+
+      <section className="relative overflow-hidden bg-slate-950">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-950 via-slate-950 to-indigo-950" />
+
+        <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full border border-white/10" />
+
+        <div className="absolute -bottom-40 -left-40 h-[28rem] w-[28rem] rounded-full border border-white/10" />
+
+        <div className="relative mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+          {/* Top navigation */}
+
+          <div className="flex items-center justify-between">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-white"
+            >
+              <FiArrowLeft />
+              Back to Home
+            </Link>
+
+            <div className="hidden items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-300 sm:flex">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              Registration Open
+            </div>
           </div>
 
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
-            Register for the Reunion
-          </h1>
+          <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div className="max-w-3xl">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-300/20 bg-blue-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-blue-200">
+                <FiAward />
+                {event.edition}
+              </div>
 
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
-            Complete the form below to secure your participation in our
-            memorable school reunion.
-          </p>
-        </div>
+              <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
+                {event.title}
+              </h1>
 
-        {/* Event information */}
-        <div className="mb-7 overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 text-white shadow-xl sm:mb-8">
-          <div className="grid gap-5 p-5 sm:p-6 md:grid-cols-3 md:gap-6 md:p-8">
-            <EventInfo
-              icon={<FiCalendar />}
-              label="Reunion Date"
-              value={formatDate(reunion.eventDate)}
-            />
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+                {event.description}
+              </p>
 
-            <EventInfo
-              icon={<FiClock />}
-              label="Event Time"
-              value={getEventTime(reunion)}
-            />
+              <div className="mt-7 grid gap-3 sm:grid-cols-3">
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
+                  <FiCalendar className="h-5 w-5 shrink-0 text-blue-300" />
 
-            <EventInfo
-              icon={<FiMapPin />}
-              label="Venue"
-              value={
-                reunion.venue || reunion.location || "Venue will be announced"
-              }
-            />
+                  <div>
+                    <p className="text-xs text-slate-400">Reunion Date</p>
+
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {formatDate(event.eventDate)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
+                  <FiClock className="h-5 w-5 shrink-0 text-blue-300" />
+
+                  <div>
+                    <p className="text-xs text-slate-400">Time</p>
+
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {event.startTime} – {event.endTime}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
+                  <FiMapPin className="h-5 w-5 shrink-0 text-blue-300" />
+
+                  <div>
+                    <p className="text-xs text-slate-400">Venue</p>
+
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {event.venue}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden rounded-3xl border border-white/10 bg-white/[0.06] p-6 text-center backdrop-blur lg:block">
+              <FiUsers className="mx-auto h-8 w-8 text-blue-300" />
+
+              <p className="mt-3 text-sm font-semibold text-white">
+                One School
+              </p>
+
+              <p className="mt-1 text-xs text-slate-400">One Family</p>
+            </div>
           </div>
         </div>
+      </section>
 
-        {/* Steps */}
-        <div className="mb-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:mb-8 sm:p-6">
-          <div className="flex items-center">
-            {STEPS.map((step, index) => {
-              const completed = currentStep > step.id;
-              const active = currentStep === step.id;
+      {/* ======================================================
+          MAIN REGISTRATION AREA
+      ======================================================= */}
 
-              return (
-                <div key={step.id} className="flex min-w-0 flex-1 items-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (completed) {
-                        setCurrentStep(step.id);
-                      }
-                    }}
-                    disabled={!completed && !active}
-                    className="flex min-w-0 flex-col items-center"
-                    aria-label={`Step ${step.id}: ${step.title}`}
-                  >
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition sm:h-11 sm:w-11 sm:text-sm ${
-                        completed || active
-                          ? "bg-indigo-600 text-white"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
-                    >
-                      {completed ? (
-                        <FiCheck className="h-4 w-4 sm:h-5 sm:w-5" />
-                      ) : (
-                        step.id
+      <section className="px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+            {/* =================================================
+                FORM
+            ================================================== */}
+
+            <div>
+              {/* Step Indicator */}
+
+              <div className="mb-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="grid grid-cols-4 gap-2">
+                  {[1, 2, 3, 4].map((step) => {
+                    const active = currentStep === step;
+                    const completed = currentStep > step;
+
+                    return (
+                      <div key={step} className="relative">
+                        <div className="flex items-center">
+                          <div
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition ${
+                              completed
+                                ? "bg-emerald-600 text-white"
+                                : active
+                                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                                  : "bg-slate-100 text-slate-400"
+                            }`}
+                          >
+                            {completed ? <FiCheck /> : step}
+                          </div>
+
+                          {step !== 4 && (
+                            <div
+                              className={`mx-2 h-0.5 flex-1 ${
+                                currentStep > step
+                                  ? "bg-emerald-500"
+                                  : "bg-slate-100"
+                              }`}
+                            />
+                          )}
+                        </div>
+
+                        <p
+                          className={`mt-2 hidden text-xs font-semibold sm:block ${
+                            active
+                              ? "text-blue-600"
+                              : completed
+                                ? "text-emerald-600"
+                                : "text-slate-400"
+                          }`}
+                        >
+                          {step === 1 && "Personal"}
+                          {step === 2 && "School"}
+                          {step === 3 && "Package"}
+                          {step === 4 && "Confirm"}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit(handleRegistration)} noValidate>
+                {/* =================================================
+                    STEP 1
+                ================================================== */}
+
+                {currentStep === 1 && (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                    <div className="mb-8">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                        <FiUser className="h-6 w-6" />
+                      </div>
+
+                      <h2 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
+                        Personal Information
+                      </h2>
+
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Confirm your personal information before continuing.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      {/* Name */}
+
+                      <div className="sm:col-span-2">
+                        <label
+                          htmlFor="participantName"
+                          className="mb-2 block text-sm font-semibold text-slate-700"
+                        >
+                          Full Name
+                        </label>
+
+                        <input
+                          id="participantName"
+                          type="text"
+                          autoComplete="name"
+                          placeholder="Enter your full name"
+                          disabled={submitLoading}
+                          defaultValue={user?.name || ""}
+                          {...register("participantName", {
+                            required: "Full name is required.",
+                            minLength: {
+                              value: 3,
+                              message: "Name must be at least 3 characters.",
+                            },
+                            maxLength: {
+                              value: 100,
+                              message: "Name cannot exceed 100 characters.",
+                            },
+                          })}
+                          className={`w-full rounded-xl border bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                            errors.participantName
+                              ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                              : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                          }`}
+                        />
+
+                        {errors.participantName && (
+                          <p className="mt-2 text-xs font-medium text-red-600">
+                            {errors.participantName.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Email */}
+
+                      <div>
+                        <label
+                          htmlFor="email"
+                          className="mb-2 block text-sm font-semibold text-slate-700"
+                        >
+                          Email Address
+                        </label>
+
+                        <input
+                          id="email"
+                          type="email"
+                          autoComplete="email"
+                          disabled
+                          value={user?.email || ""}
+                          readOnly
+                          className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-4 py-3.5 text-sm text-slate-500 outline-none"
+                        />
+
+                        <p className="mt-2 text-xs text-slate-400">
+                          Your authenticated account email.
+                        </p>
+                      </div>
+
+                      {/* Phone */}
+
+                      <div>
+                        <label
+                          htmlFor="phone"
+                          className="mb-2 block text-sm font-semibold text-slate-700"
+                        >
+                          Phone Number
+                        </label>
+
+                        <input
+                          id="phone"
+                          type="tel"
+                          inputMode="numeric"
+                          autoComplete="tel"
+                          maxLength={11}
+                          placeholder="01712345678"
+                          disabled={submitLoading}
+                          defaultValue={user?.phone || ""}
+                          {...register("phone", {
+                            required: "Phone number is required.",
+                            pattern: {
+                              value: PHONE_REGEX,
+                              message:
+                                "Enter a valid Bangladeshi phone number.",
+                            },
+                            setValueAs: (value) =>
+                              typeof value === "string" ? value.trim() : "",
+                          })}
+                          className={`w-full rounded-xl border bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                            errors.phone
+                              ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                              : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                          }`}
+                        />
+
+                        {errors.phone && (
+                          <p className="mt-2 text-xs font-medium text-red-600">
+                            {errors.phone.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* District */}
+
+                      <div>
+                        <label
+                          htmlFor="district"
+                          className="mb-2 block text-sm font-semibold text-slate-700"
+                        >
+                          District
+                        </label>
+
+                        <input
+                          id="district"
+                          type="text"
+                          placeholder="e.g. Dhaka"
+                          disabled={submitLoading}
+                          {...register("district", {
+                            required: "District is required.",
+                            maxLength: {
+                              value: 100,
+                              message: "District cannot exceed 100 characters.",
+                            },
+                          })}
+                          className={`w-full rounded-xl border bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                            errors.district
+                              ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                              : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                          }`}
+                        />
+
+                        {errors.district && (
+                          <p className="mt-2 text-xs font-medium text-red-600">
+                            {errors.district.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* City */}
+
+                      <div>
+                        <label
+                          htmlFor="city"
+                          className="mb-2 block text-sm font-semibold text-slate-700"
+                        >
+                          City / Current Location
+                        </label>
+
+                        <input
+                          id="city"
+                          type="text"
+                          placeholder="e.g. Dhaka"
+                          disabled={submitLoading}
+                          {...register("city", {
+                            required: "City / current location is required.",
+                            maxLength: {
+                              value: 100,
+                              message: "City cannot exceed 100 characters.",
+                            },
+                          })}
+                          className={`w-full rounded-xl border bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                            errors.city
+                              ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                              : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                          }`}
+                        />
+
+                        {errors.city && (
+                          <p className="mt-2 text-xs font-medium text-red-600">
+                            {errors.city.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-8 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleNext}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-blue-700"
+                      >
+                        Continue
+                        <FiArrowRight />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* =================================================
+                    STEP 2
+                ================================================== */}
+
+                {currentStep === 2 && (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                    <div className="mb-8">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                        <FiUsers className="h-6 w-6" />
+                      </div>
+
+                      <h2 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
+                        School Information
+                      </h2>
+
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Tell us about your relationship with the school.
+                      </p>
+                    </div>
+
+                    <div className="space-y-6">
+                      {/* Student Type */}
+
+                      <div>
+                        <label className="mb-3 block text-sm font-semibold text-slate-700">
+                          Student Status
+                        </label>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {STUDENT_TYPES.map((item) => (
+                            <label
+                              key={item.value}
+                              className={`relative cursor-pointer rounded-2xl border p-4 transition ${
+                                studentType === item.value
+                                  ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100"
+                                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                value={item.value}
+                                className="sr-only"
+                                disabled={submitLoading}
+                                {...register("studentType", {
+                                  required:
+                                    "Please select your student status.",
+                                })}
+                              />
+
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${
+                                    studentType === item.value
+                                      ? "border-blue-600 bg-blue-600"
+                                      : "border-slate-300"
+                                  }`}
+                                >
+                                  {studentType === item.value && (
+                                    <span className="h-2 w-2 rounded-full bg-white" />
+                                  )}
+                                </div>
+
+                                <div>
+                                  <p className="text-sm font-bold text-slate-900">
+                                    {item.label}
+                                  </p>
+
+                                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                                    {item.description}
+                                  </p>
+                                </div>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+
+                        {errors.studentType && (
+                          <p className="mt-2 text-xs font-medium text-red-600">
+                            {errors.studentType.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Class + Batch */}
+
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <div>
+                          <label
+                            htmlFor="classLevel"
+                            className="mb-2 block text-sm font-semibold text-slate-700"
+                          >
+                            Class
+                          </label>
+
+                          <div className="relative">
+                            <select
+                              id="classLevel"
+                              disabled={submitLoading}
+                              {...register("classLevel", {
+                                required: "Please select your class.",
+                              })}
+                              className={`w-full appearance-none rounded-xl border bg-slate-50 px-4 py-3.5 pr-10 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                                errors.classLevel
+                                  ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                                  : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                              }`}
+                            >
+                              <option value="">Select class</option>
+
+                              {CLASS_LEVELS.map((item) => (
+                                <option key={item.value} value={item.value}>
+                                  {item.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                          </div>
+
+                          {errors.classLevel && (
+                            <p className="mt-2 text-xs font-medium text-red-600">
+                              {errors.classLevel.message}
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="batchYear"
+                            className="mb-2 block text-sm font-semibold text-slate-700"
+                          >
+                            Batch / Passing Year
+                          </label>
+
+                          <input
+                            id="batchYear"
+                            type="number"
+                            min="1950"
+                            max="2100"
+                            placeholder="e.g. 2020"
+                            disabled={submitLoading}
+                            {...register("batchYear", {
+                              required: "Batch / passing year is required.",
+                              valueAsNumber: true,
+                              min: {
+                                value: 1950,
+                                message: "Enter a valid batch year.",
+                              },
+                              max: {
+                                value: 2100,
+                                message: "Enter a valid batch year.",
+                              },
+                            })}
+                            className={`w-full rounded-xl border bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                              errors.batchYear
+                                ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                                : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                            }`}
+                          />
+
+                          {errors.batchYear && (
+                            <p className="mt-2 text-xs font-medium text-red-600">
+                              {errors.batchYear.message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Department */}
+
+                      {requiresDepartment && (
+                        <div>
+                          <label
+                            htmlFor="department"
+                            className="mb-2 block text-sm font-semibold text-slate-700"
+                          >
+                            Department
+                          </label>
+
+                          <div className="relative">
+                            <select
+                              id="department"
+                              disabled={submitLoading}
+                              {...register("department", {
+                                required: "Please select your department.",
+                              })}
+                              className={`w-full appearance-none rounded-xl border bg-slate-50 px-4 py-3.5 pr-10 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                                errors.department
+                                  ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                                  : "border-slate-200 focus:border-blue-500 focus:ring-blue-100"
+                              }`}
+                            >
+                              <option value="">Select department</option>
+
+                              {DEPARTMENTS.map((item) => (
+                                <option key={item.value} value={item.value}>
+                                  {item.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                          </div>
+
+                          <p className="mt-2 text-xs text-slate-400">
+                            Department is required for Class 9 and Class 10.
+                          </p>
+
+                          {errors.department && (
+                            <p className="mt-2 text-xs font-medium text-red-600">
+                              {errors.department.message}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
 
-                    <span
-                      className={`mt-2 text-[10px] font-semibold sm:text-xs ${
-                        active ? "text-indigo-600" : "text-slate-500"
-                      }`}
-                    >
-                      <span className="sm:hidden">{step.shortTitle}</span>
+                    <div className="mt-8 flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={handlePrevious}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <FiArrowLeft />
+                        Back
+                      </button>
 
-                      <span className="hidden sm:inline">{step.title}</span>
-                    </span>
-                  </button>
-
-                  {index < STEPS.length - 1 && (
-                    <div
-                      className={`mx-1.5 h-1 flex-1 rounded-full sm:mx-3 md:mx-5 ${
-                        currentStep > step.id ? "bg-indigo-600" : "bg-slate-100"
-                      }`}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl"
-        >
-          <div className="p-5 sm:p-7 md:p-10">
-            {/* STEP 1 */}
-            {currentStep === 1 && (
-              <section>
-                <StepHeading
-                  icon={<FiUser />}
-                  title="Personal Information"
-                  description="Tell us a little about yourself."
-                />
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <InputField
-                    label="Full Name"
-                    required
-                    type="text"
-                    placeholder="Enter your full name"
-                    icon={<FiUser />}
-                    error={errors.name?.message}
-                    autoComplete="name"
-                    {...register("name", {
-                      required: "Full name is required.",
-
-                      minLength: {
-                        value: 3,
-                        message: "Name must be at least 3 characters.",
-                      },
-
-                      maxLength: {
-                        value: 100,
-                        message: "Name cannot exceed 100 characters.",
-                      },
-                    })}
-                  />
-
-                  <InputField
-                    label="Email Address"
-                    required
-                    type="email"
-                    placeholder="Your login email"
-                    icon={<FiMail />}
-                    disabled
-                    error={errors.email?.message}
-                    autoComplete="email"
-                    {...register("email", {
-                      required: "Email is required.",
-
-                      pattern: {
-                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                        message: "Please enter a valid email.",
-                      },
-                    })}
-                  />
-
-                  <InputField
-                    label="Phone Number"
-                    required
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="01XXXXXXXXX"
-                    icon={<FiPhone />}
-                    error={errors.phone?.message}
-                    autoComplete="tel"
-                    {...register("phone", {
-                      required: "Phone number is required.",
-
-                      pattern: {
-                        value: /^01[3-9]\d{8}$/,
-                        message: "Enter a valid Bangladesh mobile number.",
-                      },
-                    })}
-                  />
-
-                  <InputField
-                    label="District"
-                    required
-                    type="text"
-                    placeholder="e.g. Khulna"
-                    icon={<FiMapPin />}
-                    error={errors.district?.message}
-                    {...register("district", {
-                      required: "District is required.",
-
-                      minLength: {
-                        value: 2,
-                        message: "Please enter a valid district.",
-                      },
-                    })}
-                  />
-
-                  <InputField
-                    label="City / Upazila"
-                    required
-                    type="text"
-                    placeholder="Enter your city or upazila"
-                    icon={<FiMapPin />}
-                    error={errors.city?.message}
-                    {...register("city", {
-                      required: "City / Upazila is required.",
-
-                      minLength: {
-                        value: 2,
-                        message: "Please enter a valid city or upazila.",
-                      },
-                    })}
-                  />
-                </div>
-              </section>
-            )}
-
-            {/* STEP 2 */}
-            {currentStep === 2 && (
-              <section>
-                <StepHeading
-                  icon={<FiUsers />}
-                  title="School Information"
-                  description="Tell us about your school journey."
-                />
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <SelectField
-                    label="Student Type"
-                    required
-                    icon={<FiUsers />}
-                    error={errors.studentType?.message}
-                    {...register("studentType", {
-                      required: "Please select your student type.",
-                    })}
-                  >
-                    <option value="">Select student type</option>
-
-                    <option value="current">Current Student</option>
-
-                    <option value="alumni">Alumni / Ex-Student</option>
-                  </SelectField>
-
-                  <SelectField
-                    label="Class"
-                    required
-                    icon={<FiUsers />}
-                    error={errors.classLevel?.message}
-                    {...register("classLevel", {
-                      required: "Please select your class.",
-                    })}
-                  >
-                    <option value="">Select class</option>
-
-                    {CLASS_LEVELS.map((level) => (
-                      <option key={level} value={level}>
-                        Class {level}
-                      </option>
-                    ))}
-                  </SelectField>
-
-                  <InputField
-                    label="Batch / Passing Year"
-                    required
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="e.g. 2025"
-                    error={errors.batchYear?.message}
-                    {...register("batchYear", {
-                      required: "Batch year is required.",
-
-                      min: {
-                        value: 1950,
-                        message: "Batch year must be 1950 or later.",
-                      },
-
-                      max: {
-                        value: 2100,
-                        message: "Please enter a valid batch year.",
-                      },
-
-                      validate: (value) =>
-                        Number.isInteger(Number(value)) ||
-                        "Please enter a valid year.",
-                    })}
-                  />
-
-                  {(classLevel === "9" || classLevel === "10") && (
-                    <SelectField
-                      label="Department"
-                      required
-                      icon={<FiUsers />}
-                      error={errors.department?.message}
-                      {...register("department", {
-                        required: "Department is required for Class 9 and 10.",
-                      })}
-                    >
-                      <option value="">Select department</option>
-
-                      {DEPARTMENTS.map((department) => (
-                        <option key={department.value} value={department.value}>
-                          {department.label}
-                        </option>
-                      ))}
-                    </SelectField>
-                  )}
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-                  <div className="flex items-start gap-3">
-                    <FiShield className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-
-                    <div>
-                      <p className="text-sm font-bold text-indigo-900">
-                        Department information
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-indigo-700">
-                        Classes 6–8 do not have departments. Department
-                        selection is required only for Classes 9–10.
-                      </p>
+                      <button
+                        type="button"
+                        onClick={handleNext}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-blue-700"
+                      >
+                        Continue
+                        <FiArrowRight />
+                      </button>
                     </div>
                   </div>
-                </div>
-              </section>
-            )}
+                )}
 
-            {/* STEP 3 */}
-            {currentStep === 3 && (
-              <section>
-                <StepHeading
-                  icon={<FiGift />}
-                  title="Reunion Package"
-                  description="Choose your reunion package and T-shirt size."
-                />
+                {/* =================================================
+                    STEP 3
+                ================================================== */}
 
-                {eventPackages.length > 0 ? (
-                  <div className="grid gap-5 md:grid-cols-2">
-                    {eventPackages.map((item, index) => {
-                      const id = getPackageId(item) || `package-${index}`;
+                {currentStep === 3 && (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                    <div className="mb-8">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                        <FiGift className="h-6 w-6" />
+                      </div>
 
-                      const isSelected =
-                        String(selectedPackageId) === String(id);
+                      <h2 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
+                        Reunion Package & T-Shirt
+                      </h2>
 
-                      const packageItems = Array.isArray(item.items)
-                        ? item.items
-                        : Array.isArray(item.gifts)
-                          ? item.gifts
-                          : [];
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Choose your reunion package and T-shirt size.
+                      </p>
+                    </div>
 
-                      return (
-                        <label
-                          key={id}
-                          className={`relative block cursor-pointer rounded-2xl border-2 p-5 transition sm:p-6 ${
-                            isSelected
-                              ? "border-indigo-600 bg-indigo-50 shadow-md"
-                              : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-sm"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            value={id}
-                            className="sr-only"
-                            {...register("packageId", {
-                              required: "Please select a reunion package.",
-                            })}
-                          />
+                    {/* Package */}
 
-                          {isSelected && (
-                            <div className="absolute right-4 top-4">
-                              <FiCheckCircle className="h-6 w-6 text-indigo-600" />
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <label className="block text-sm font-semibold text-slate-700">
+                          Reunion Package
+                        </label>
+
+                        <span className="text-xs text-slate-400">Required</span>
+                      </div>
+
+                      {packages.length > 0 ? (
+                        <div className="grid gap-4">
+                          {packages.map((item) => {
+                            const selected = selectedPackageId === item.id;
+
+                            return (
+                              <label
+                                key={item.id}
+                                className={`cursor-pointer rounded-2xl border p-5 transition ${
+                                  selected
+                                    ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100"
+                                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  value={item.id}
+                                  className="sr-only"
+                                  disabled={submitLoading}
+                                  {...register("packageId", {
+                                    required:
+                                      "Please select a reunion package.",
+                                  })}
+                                />
+
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex items-start gap-4">
+                                    <div
+                                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                                        selected
+                                          ? "bg-blue-600 text-white"
+                                          : "bg-slate-100 text-slate-500"
+                                      }`}
+                                    >
+                                      <FiGift className="h-5 w-5" />
+                                    </div>
+
+                                    <div>
+                                      <h3 className="font-bold text-slate-900">
+                                        {item.name}
+                                      </h3>
+
+                                      <p className="mt-1 text-sm leading-6 text-slate-500">
+                                        {item.description}
+                                      </p>
+
+                                      {item.items.length > 0 && (
+                                        <ul className="mt-4 space-y-2">
+                                          {item.items.map((gift, index) => (
+                                            <li
+                                              key={`${item.id}-${index}`}
+                                              className="flex items-center gap-2 text-xs text-slate-600"
+                                            >
+                                              <FiCheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                                              {gift}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {selected && (
+                                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+                                      <FiCheck className="h-4 w-4" />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {item.price !== null && (
+                                  <div className="mt-4 border-t border-slate-200 pt-4">
+                                    <span className="text-sm font-bold text-slate-900">
+                                      ৳{item.price}
+                                    </span>
+                                  </div>
+                                )}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                          <div className="flex items-start gap-3">
+                            <FiInfo className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+
+                            <div>
+                              <p className="text-sm font-bold text-amber-800">
+                                Reunion package information is not available
+                                yet.
+                              </p>
+
+                              <p className="mt-1 text-xs leading-5 text-amber-700">
+                                Please contact the reunion organizers before
+                                submitting your registration.
+                              </p>
                             </div>
-                          )}
-
-                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
-                            <FiGift className="h-6 w-6" />
                           </div>
+                        </div>
+                      )}
 
-                          <h3 className="mt-4 pr-8 text-lg font-bold text-slate-900">
-                            {item.name ||
-                              item.title ||
-                              `Reunion Package ${index + 1}`}
+                      {errors.packageId && (
+                        <p className="mt-2 text-xs font-medium text-red-600">
+                          {errors.packageId.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* T-shirt */}
+
+                    <div className="mt-8">
+                      <label className="mb-3 block text-sm font-semibold text-slate-700">
+                        T-Shirt Size
+                      </label>
+
+                      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                        {TSHIRT_SIZES.map((size) => {
+                          const selected = tshirtSize === size;
+
+                          return (
+                            <label
+                              key={size}
+                              className={`cursor-pointer rounded-xl border px-2 py-3 text-center transition ${
+                                selected
+                                  ? "border-blue-600 bg-blue-600 text-white"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                value={size}
+                                className="sr-only"
+                                disabled={submitLoading}
+                                {...register("tshirtSize", {
+                                  required: "Please select your T-shirt size.",
+                                })}
+                              />
+
+                              <span className="text-xs font-bold">{size}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {errors.tshirtSize && (
+                        <p className="mt-2 text-xs font-medium text-red-600">
+                          {errors.tshirtSize.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {selectedPackage && (
+                      <div className="mt-7 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                        <div className="flex items-start gap-3">
+                          <FiGift className="mt-0.5 h-5 w-5 text-blue-600" />
+
+                          <div>
+                            <p className="text-sm font-bold text-blue-900">
+                              Selected Package
+                            </p>
+
+                            <p className="mt-1 text-sm text-blue-700">
+                              {selectedPackage.name}
+                            </p>
+
+                            <p className="mt-1 text-xs text-blue-600">
+                              T-Shirt Size:{" "}
+                              <span className="font-bold">
+                                {tshirtSize || "Not selected"}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-8 flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={handlePrevious}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <FiArrowLeft />
+                        Back
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleNext}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-blue-700"
+                      >
+                        Review
+                        <FiArrowRight />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* =================================================
+                    STEP 4
+                ================================================== */}
+
+                {currentStep === 4 && (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                    <div className="mb-8">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-50 text-purple-600">
+                        <FiCheckCircle className="h-6 w-6" />
+                      </div>
+
+                      <h2 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
+                        Review & Confirm
+                      </h2>
+
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Please review your information before submitting.
+                      </p>
+                    </div>
+
+                    {/* Summary */}
+
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            Personal Information
                           </h3>
 
-                          {(item.description || item.details) && (
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
-                              {item.description || item.details}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentStep(1)}
+                            className="text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            Edit
+                          </button>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                          <div>
+                            <p className="text-xs text-slate-400">Name</p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {getValues("participantName")}
                             </p>
-                          )}
+                          </div>
 
-                          {item.price !== undefined && item.price !== null && (
-                            <p className="mt-4 text-xl font-bold text-indigo-600">
-                              ৳{item.price}
+                          <div>
+                            <p className="text-xs text-slate-400">Email</p>
+
+                            <p className="mt-1 break-all font-semibold text-slate-800">
+                              {user?.email}
                             </p>
-                          )}
+                          </div>
 
-                          {packageItems.length > 0 && (
-                            <ul className="mt-5 space-y-2.5">
-                              {packageItems.map((gift, giftIndex) => {
-                                const giftName =
-                                  typeof gift === "string"
-                                    ? gift
-                                    : gift?.name || gift?.title || "";
+                          <div>
+                            <p className="text-xs text-slate-400">Phone</p>
 
-                                if (!giftName) {
-                                  return null;
-                                }
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {getValues("phone")}
+                            </p>
+                          </div>
 
-                                return (
-                                  <li
-                                    key={`${id}-${giftIndex}`}
-                                    className="flex items-start gap-2 text-sm text-slate-600"
-                                  >
-                                    <FiCheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                          <div>
+                            <p className="text-xs text-slate-400">Location</p>
 
-                                    <span>{giftName}</span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                    <div className="flex items-start gap-3">
-                      <FiGift className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-
-                      <div>
-                        <p className="font-semibold text-amber-900">
-                          Reunion package
-                        </p>
-
-                        <p className="mt-1 text-sm leading-6 text-amber-700">
-                          The reunion package information has not been published
-                          yet.
-                        </p>
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {getValues("city")}, {getValues("district")}
+                            </p>
+                          </div>
+                        </div>
                       </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            School Information
+                          </h3>
+
+                          <button
+                            type="button"
+                            onClick={() => setCurrentStep(2)}
+                            className="text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            Edit
+                          </button>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                          <div>
+                            <p className="text-xs text-slate-400">
+                              Student Status
+                            </p>
+
+                            <p className="mt-1 font-semibold capitalize text-slate-800">
+                              {getValues("studentType")}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-slate-400">Class</p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              Class {getValues("classLevel")}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-slate-400">
+                              Batch / Passing Year
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {getValues("batchYear")}
+                            </p>
+                          </div>
+
+                          {requiresDepartment && (
+                            <div>
+                              <p className="text-xs text-slate-400">
+                                Department
+                              </p>
+
+                              <p className="mt-1 font-semibold capitalize text-slate-800">
+                                {getValues("department")}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            Reunion Package
+                          </h3>
+
+                          <button
+                            type="button"
+                            onClick={() => setCurrentStep(3)}
+                            className="text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            Edit
+                          </button>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                          <div>
+                            <p className="text-xs text-slate-400">Package</p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {selectedPackage?.name || getValues("packageId")}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-slate-400">
+                              T-Shirt Size
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {getValues("tshirtSize")}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Consent */}
+
+                    <div className="mt-7">
+                      <label
+                        className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-5 transition ${
+                          errors.agreeToRules
+                            ? "border-red-300 bg-red-50"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={submitLoading}
+                          {...register("agreeToRules", {
+                            required:
+                              "You must agree to the reunion rules before submitting.",
+                          })}
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 accent-blue-600 focus:ring-blue-500"
+                        />
+
+                        <span className="text-sm leading-6 text-slate-600">
+                          I confirm that the information provided above is
+                          accurate and I agree to the reunion registration rules
+                          and guidelines.
+                        </span>
+                      </label>
+
+                      {errors.agreeToRules && (
+                        <p className="mt-2 text-xs font-medium text-red-600">
+                          {errors.agreeToRules.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Payment notice */}
+
+                    <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="flex items-start gap-3">
+                        <FiCheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+
+                        <div>
+                          <p className="text-sm font-bold text-emerald-800">
+                            No payment required
+                          </p>
+
+                          <p className="mt-1 text-xs leading-5 text-emerald-700">
+                            {event.paymentRequired
+                              ? "Payment instructions will be provided after registration."
+                              : "Your reunion registration does not require an online payment."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Submit */}
+
+                    <div className="mt-8 flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={handlePrevious}
+                        disabled={submitLoading}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <FiArrowLeft />
+                        Back
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={
+                          submitLoading || event.registrationOpen !== true
+                        }
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {submitLoading ? (
+                          <>
+                            <FiLoader className="h-5 w-5 animate-spin" />
+                            Submitting...
+                          </>
+                        ) : (
+                          <>
+                            Complete Registration
+                            <FiCheck />
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 )}
+              </form>
+            </div>
 
-                {errors.packageId?.message && (
-                  <p className="mt-2 text-sm font-medium text-red-600">
-                    {errors.packageId.message}
-                  </p>
-                )}
+            {/* =================================================
+                SIDEBAR
+            ================================================== */}
 
-                <div className="mt-8">
-                  <SelectField
-                    label="T-Shirt Size"
-                    required
-                    icon={<FiUsers />}
-                    error={errors.tshirtSize?.message}
-                    {...register("tshirtSize", {
-                      required: "Please select your T-shirt size.",
-                    })}
-                  >
-                    <option value="">Select T-shirt size</option>
+            <aside className="space-y-5">
+              {/* Event card */}
 
-                    {TSHIRT_SIZES.map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </SelectField>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <FiCalendar className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Reunion
+                    </p>
+
+                    <p className="mt-1 text-sm font-bold text-slate-900">
+                      {event.shortTitle || event.title}
+                    </p>
+                  </div>
                 </div>
 
-                {selectedPackage && (
-                  <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-                    <div className="flex items-start gap-3">
-                      <FiCheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-
-                      <div>
-                        <p className="font-semibold text-emerald-900">
-                          Selected package
-                        </p>
-
-                        <p className="mt-1 text-sm text-emerald-700">
-                          {selectedPackage.name ||
-                            selectedPackage.title ||
-                            "Reunion Package"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </section>
-            )}
-
-            {/* STEP 4 */}
-            {currentStep === 4 && (
-              <section>
-                <StepHeading
-                  icon={<FiCheckCircle />}
-                  title="Confirm Registration"
-                  description="Review your information before submitting."
-                />
-
-                <div className="space-y-5 sm:space-y-6">
-                  <SummaryCard
-                    title="Personal Information"
-                    items={[
-                      ["Name", watch("name")],
-                      ["Email", watch("email")],
-                      ["Phone", watch("phone")],
-                      ["District", watch("district")],
-                      ["City", watch("city")],
-                    ]}
-                  />
-
-                  <SummaryCard
-                    title="School Information"
-                    items={[
-                      [
-                        "Student Type",
-                        studentType === "alumni"
-                          ? "Alumni / Ex-Student"
-                          : "Current Student",
-                      ],
-                      ["Class", classLevel ? `Class ${classLevel}` : ""],
-                      ["Batch Year", watch("batchYear")],
-                      ["Department", watch("department") || "Not applicable"],
-                    ]}
-                  />
-
-                  <SummaryCard
-                    title="Reunion Details"
-                    items={[
-                      [
-                        "Event",
-                        reunion.title || reunion.name || "School Reunion",
-                      ],
-                      ["Date", formatDate(reunion.eventDate)],
-                      ["Time", getEventTime(reunion)],
-                      [
-                        "Venue",
-                        reunion.venue || reunion.location || "To be announced",
-                      ],
-                      [
-                        "Package",
-                        selectedPackage?.name ||
-                          selectedPackage?.title ||
-                          "Selected package",
-                      ],
-                      ["T-Shirt", tshirtSize],
-                    ]}
-                  />
-
-                  <label
-                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-5 transition ${
-                      agreeToRules
-                        ? "border-indigo-600 bg-indigo-50"
-                        : "border-slate-200 bg-white hover:border-slate-300"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-5 w-5 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      {...register("agreeToRules", {
-                        required: "You must agree to the reunion rules.",
-                      })}
-                    />
+                <div className="mt-5 space-y-4">
+                  <div className="flex gap-3">
+                    <FiCalendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
 
                     <div>
-                      <p className="font-semibold text-slate-900">
-                        I agree to the reunion rules
-                      </p>
+                      <p className="text-xs text-slate-400">Date</p>
 
-                      <p className="mt-1 text-sm leading-6 text-slate-600">
-                        I confirm that the information provided above is correct
-                        and I agree to follow the rules and guidelines of the
-                        school reunion.
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {formatDate(event.eventDate)}
                       </p>
                     </div>
-                  </label>
+                  </div>
 
-                  {errors.agreeToRules?.message && (
-                    <p className="text-sm font-medium text-red-600">
-                      {errors.agreeToRules.message}
-                    </p>
-                  )}
+                  <div className="flex gap-3">
+                    <FiClock className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+
+                    <div>
+                      <p className="text-xs text-slate-400">Time</p>
+
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {event.startTime} – {event.endTime}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <FiMapPin className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+
+                    <div>
+                      <p className="text-xs text-slate-400">Venue</p>
+
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {event.venue}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </section>
-            )}
-          </div>
+              </div>
 
-          {/* Form actions */}
-          <div className="border-t border-slate-200 bg-slate-50 px-5 py-5 sm:px-7 md:px-10">
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={handlePrevious}
-                disabled={currentStep === 1 || registrationMutation.isPending}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:text-base"
-              >
-                <FiArrowLeft />
-                Previous
-              </button>
+              {/* Gifts */}
 
-              {currentStep < STEPS.length ? (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  disabled={registrationMutation.isPending}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:text-base"
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <FiGift className="h-5 w-5" />
+                </div>
+
+                <h3 className="mt-4 text-lg font-bold text-slate-900">
+                  Registration Gifts
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Registered students will receive the official reunion
+                  commemorative items.
+                </p>
+
+                <ul className="mt-5 space-y-3">
+                  {[
+                    "Commemorative Reunion Bag",
+                    "Reunion Mug",
+                    "Souvenir Pen",
+                    "School Crest",
+                    "Official Reunion T-Shirt",
+                    "Additional Commemorative Gifts",
+                  ].map((item) => (
+                    <li
+                      key={item}
+                      className="flex items-center gap-2 text-sm text-slate-600"
+                    >
+                      <FiCheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Security */}
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <FiShield className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Secure Registration
+                    </h3>
+
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      Your account identity is verified through Firebase
+                      authentication. Reunion registration is securely submitted
+                      through the protected backend.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Help */}
+
+              <div className="rounded-3xl bg-slate-950 p-6 text-white">
+                <FiPhone className="h-5 w-5 text-blue-300" />
+
+                <h3 className="mt-4 text-sm font-bold">Need help?</h3>
+
+                <p className="mt-2 text-xs leading-5 text-slate-400">
+                  If you have any problem with your reunion registration, please
+                  contact the reunion organizers.
+                </p>
+
+                <Link
+                  to="/contact"
+                  className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-blue-300 hover:text-white"
                 >
-                  Continue
+                  Contact Organizers
                   <FiArrowRight />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={registrationMutation.isPending || !agreeToRules}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:text-base"
-                >
-                  {registrationMutation.isPending ? (
-                    <>
-                      <FiLoader className="animate-spin" />
-                      Registering...
-                    </>
-                  ) : (
-                    <>
-                      <FiCheckCircle />
-                      Complete Registration
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
+                </Link>
+              </div>
+            </aside>
           </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-/*
- * -----------------------------------------------------------
- * Event Info
- * -----------------------------------------------------------
- */
-
-const EventInfo = ({ icon, label, value }) => {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10">
-        {icon}
-      </div>
-
-      <div className="min-w-0">
-        <p className="text-[10px] font-medium uppercase tracking-wider text-indigo-100 sm:text-xs">
-          {label}
-        </p>
-
-        <p className="mt-1 break-words text-sm font-semibold leading-6 sm:text-base">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-/*
- * -----------------------------------------------------------
- * Summary Card
- * -----------------------------------------------------------
- */
-
-const SummaryCard = ({ title, items }) => {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
-      <h3 className="text-base font-bold text-slate-900 sm:text-lg">{title}</h3>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        {items.map(([label, value]) => (
-          <div key={label} className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-xs">
-              {label}
-            </p>
-
-            <p className="mt-1 break-words text-sm font-semibold leading-6 text-slate-700">
-              {value || "Not provided"}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-/*
- * -----------------------------------------------------------
- * Step Heading
- * -----------------------------------------------------------
- */
-
-const StepHeading = ({ icon, title, description }) => {
-  return (
-    <div className="mb-7 sm:mb-8">
-      <div className="flex items-start gap-3 sm:gap-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 sm:h-12 sm:w-12">
-          {icon}
         </div>
-
-        <div className="min-w-0">
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-            {title}
-          </h2>
-
-          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/*
- * -----------------------------------------------------------
- * Input Field
- * -----------------------------------------------------------
- */
-
-const InputField = ({ label, icon, error, required, ...props }) => {
-  return (
-    <div className="min-w-0">
-      <label className="mb-2 block text-sm font-semibold text-slate-700">
-        {label}
-
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </label>
-
-      <div className="relative">
-        {icon && (
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-            {icon}
-          </span>
-        )}
-
-        <input
-          {...props}
-          className={`w-full rounded-xl border bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 ${
-            icon ? "pl-10" : ""
-          } ${
-            error
-              ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-50"
-              : "border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50"
-          } disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500`}
-        />
-      </div>
-
-      {error && (
-        <p className="mt-1.5 text-xs font-medium leading-5 text-red-600">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-};
-
-/*
- * -----------------------------------------------------------
- * Select Field
- * -----------------------------------------------------------
- */
-
-const SelectField = ({ label, icon, error, required, children, ...props }) => {
-  return (
-    <div className="min-w-0">
-      <label className="mb-2 block text-sm font-semibold text-slate-700">
-        {label}
-
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </label>
-
-      <div className="relative">
-        {icon && (
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-            {icon}
-          </span>
-        )}
-
-        <select
-          {...props}
-          className={`w-full appearance-none rounded-xl border bg-white px-4 py-3.5 pr-10 text-sm text-slate-900 outline-none transition ${
-            icon ? "pl-10" : ""
-          } ${
-            error
-              ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-50"
-              : "border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50"
-          }`}
-        >
-          {children}
-        </select>
-
-        <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-      </div>
-
-      {error && (
-        <p className="mt-1.5 text-xs font-medium leading-5 text-red-600">
-          {error}
-        </p>
-      )}
-    </div>
+      </section>
+    </main>
   );
 };
 
