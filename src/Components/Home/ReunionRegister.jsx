@@ -27,10 +27,14 @@ import useAuth from "../../hooks/useAuth";
 import axiosSecure from "../../hooks/axiosSecure";
 
 /* =========================================================
-   CONSTANTS
+   API
 ========================================================= */
 
 const API_EVENT_URL = "/registrations";
+
+/* =========================================================
+   DEFAULT DATA
+========================================================= */
 
 const DEFAULT_GIFT_ITEMS = [
   "Commemorative Reunion Bag",
@@ -40,6 +44,10 @@ const DEFAULT_GIFT_ITEMS = [
   "Official Reunion T-Shirt",
   "Additional Commemorative Gifts",
 ];
+
+const DEFAULT_TSHIRT_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL"];
+
+const DEFAULT_CLASS_LEVELS = ["6", "7", "8", "9", "10"];
 
 const DEFAULT_PACKAGES = [
   {
@@ -58,7 +66,7 @@ const DEFAULT_PACKAGES = [
     tshirt: {
       included: true,
       required: true,
-      sizes: ["XS", "S", "M", "L", "XL", "2XL", "3XL"],
+      sizes: DEFAULT_TSHIRT_SIZES,
     },
     active: true,
   },
@@ -66,9 +74,11 @@ const DEFAULT_PACKAGES = [
 
 const DEFAULT_EVENT = {
   _id: "default-reunion-event",
+
   title: "Grand School Reunion 2027",
   shortTitle: "Grand Reunion 2027",
   edition: "76 Years Celebration",
+
   eventType: "school-reunion",
   status: "published",
 
@@ -124,7 +134,7 @@ const DEFAULT_EVENT = {
 
   eligibility: {
     studentTypes: ["current", "alumni"],
-    classLevels: ["6", "7", "8", "9", "10"],
+    classLevels: DEFAULT_CLASS_LEVELS,
     departments: ["science", "commerce", "humanities", "vocational"],
   },
 
@@ -151,8 +161,17 @@ const normalizeId = (value) => {
   }
 
   if (typeof value === "object") {
-    if (value.$oid) return value.$oid;
-    if (value._id) return normalizeId(value._id);
+    if (value.$oid) {
+      return String(value.$oid);
+    }
+
+    if (value._id) {
+      return normalizeId(value._id);
+    }
+
+    if (value.id) {
+      return normalizeId(value.id);
+    }
   }
 
   return String(value);
@@ -218,11 +237,20 @@ const normalizePackages = (packages) => {
 
       const packageId = pkg.packageId || pkg.id || normalizeId(pkg._id);
 
+      if (!packageId) {
+        return null;
+      }
+
+      const sizes =
+        Array.isArray(pkg.tshirt?.sizes) && pkg.tshirt.sizes.length > 0
+          ? pkg.tshirt.sizes.map(String)
+          : DEFAULT_TSHIRT_SIZES;
+
       return {
         ...pkg,
 
-        id: packageId,
-        packageId,
+        id: String(packageId),
+        packageId: String(packageId),
 
         name: pkg.name || pkg.title || "General Reunion Package",
 
@@ -230,9 +258,10 @@ const normalizePackages = (packages) => {
 
         description: pkg.description || "Commemorative reunion package.",
 
-        items: Array.isArray(pkg.items)
-          ? pkg.items.map(normalizeGiftItem).filter(Boolean)
-          : DEFAULT_GIFT_ITEMS,
+        items:
+          Array.isArray(pkg.items) && pkg.items.length > 0
+            ? pkg.items.map(normalizeGiftItem).filter(Boolean)
+            : DEFAULT_GIFT_ITEMS,
 
         pricing: {
           required: Boolean(pkg.pricing?.required),
@@ -245,10 +274,7 @@ const normalizePackages = (packages) => {
 
           required: pkg.tshirt?.required !== false,
 
-          sizes:
-            Array.isArray(pkg.tshirt?.sizes) && pkg.tshirt.sizes.length > 0
-              ? pkg.tshirt.sizes
-              : ["XS", "S", "M", "L", "XL", "2XL", "3XL"],
+          sizes,
         },
 
         active: pkg.active !== false,
@@ -268,6 +294,8 @@ const normalizeEvent = (event) => {
   return {
     ...DEFAULT_EVENT,
     ...event,
+
+    _id: event._id || event.id || DEFAULT_EVENT._id,
 
     venue: normalizeVenue(event.venue),
 
@@ -309,7 +337,9 @@ const normalizeEvent = (event) => {
 };
 
 const formatEventDate = (dateString) => {
-  if (!dateString) return "22 February 2027";
+  if (!dateString) {
+    return "22 February 2027";
+  }
 
   try {
     return new Intl.DateTimeFormat("en-GB", {
@@ -328,6 +358,7 @@ const formatPrice = (pricing) => {
   }
 
   const amount = Number(pricing.amount || 0);
+
   const currency = pricing.currency || "BDT";
 
   return `${currency} ${amount.toLocaleString()}`;
@@ -339,6 +370,46 @@ const getApiErrorMessage = (error) => {
     error?.response?.data?.error ||
     error?.message ||
     "Something went wrong. Please try again."
+  );
+};
+
+const extractEventFromResponse = (responseData) => {
+  if (!responseData) {
+    return null;
+  }
+
+  return (
+    responseData.event ||
+    responseData.data?.event ||
+    responseData.data ||
+    responseData
+  );
+};
+
+const extractPackagesFromResponse = (responseData) => {
+  if (!responseData) {
+    return [];
+  }
+
+  return (
+    responseData.packages ||
+    responseData.data?.packages ||
+    responseData.giftPackages ||
+    responseData.data?.giftPackages ||
+    []
+  );
+};
+
+const extractRegistrationFromResponse = (responseData) => {
+  if (!responseData) {
+    return null;
+  }
+
+  return (
+    responseData.registration ||
+    responseData.data?.registration ||
+    responseData.data ||
+    responseData
   );
 };
 
@@ -392,9 +463,13 @@ const ReunionRegister = () => {
   });
 
   const studentType = watch("studentType");
+
   const classLevel = watch("classLevel");
+
   const selectedPackageId = watch("packageId");
+
   const tShirtSize = watch("tShirtSize");
+
   const agreeToRules = watch("agreeToRules");
 
   const isSeniorClass = classLevel === "9" || classLevel === "10";
@@ -407,6 +482,7 @@ const ReunionRegister = () => {
     data: eventResponse,
     isLoading: eventLoading,
     isError: eventError,
+    error: eventQueryError,
     refetch: refetchEvent,
   } = useQuery({
     queryKey: ["reunion-registration-event"],
@@ -427,41 +503,37 @@ const ReunionRegister = () => {
   ======================================================= */
 
   const event = useMemo(() => {
-    const serverEvent =
-      eventResponse?.event ||
-      eventResponse?.data?.event ||
-      eventResponse?.data ||
-      eventResponse;
+    const serverEvent = extractEventFromResponse(eventResponse);
 
     return normalizeEvent(serverEvent);
   }, [eventResponse]);
 
   /* =======================================================
-     EVENT GIFT ITEMS
-     
-     IMPORTANT:
-     This fixes:
-     ReferenceError: eventGiftItems is not defined
+     EVENT ID
   ======================================================= */
 
-  const eventGiftItems =
-    Array.isArray(event.gifts?.items) && event.gifts.items.length > 0
-      ? event.gifts.items.map(normalizeGiftItem).filter(Boolean)
-      : DEFAULT_GIFT_ITEMS;
+  const eventId = useMemo(() => {
+    return normalizeId(event?._id || event?.id);
+  }, [event]);
+
+  /* =======================================================
+     EVENT GIFT ITEMS
+  ======================================================= */
+
+  const eventGiftItems = useMemo(() => {
+    if (Array.isArray(event?.gifts?.items) && event.gifts.items.length > 0) {
+      return event.gifts.items.map(normalizeGiftItem).filter(Boolean);
+    }
+
+    return DEFAULT_GIFT_ITEMS;
+  }, [event]);
 
   /* =======================================================
      PACKAGES
   ======================================================= */
 
   const packages = useMemo(() => {
-    const serverPackages =
-      eventResponse?.packages ||
-      eventResponse?.data?.packages ||
-      eventResponse?.giftPackages ||
-      eventResponse?.data?.giftPackages ||
-      [];
-
-    return normalizePackages(serverPackages);
+    return normalizePackages(extractPackagesFromResponse(eventResponse));
   }, [eventResponse]);
 
   /* =======================================================
@@ -480,21 +552,56 @@ const ReunionRegister = () => {
   }, [packages, selectedPackageId]);
 
   /* =======================================================
+     SELECTED PACKAGE SIZES
+  ======================================================= */
+
+  const selectedTshirtSizes = useMemo(() => {
+    if (
+      Array.isArray(selectedPackage?.tshirt?.sizes) &&
+      selectedPackage.tshirt.sizes.length > 0
+    ) {
+      return selectedPackage.tshirt.sizes;
+    }
+
+    return DEFAULT_TSHIRT_SIZES;
+  }, [selectedPackage]);
+
+  /* =======================================================
+     KEEP T-SHIRT SIZE VALID
+  ======================================================= */
+
+  useEffect(() => {
+    if (!selectedTshirtSizes.includes(tShirtSize)) {
+      setValue("tShirtSize", selectedTshirtSizes[0] || "L", {
+        shouldValidate: true,
+      });
+    }
+  }, [selectedTshirtSizes, tShirtSize, setValue]);
+
+  /* =======================================================
      REGISTRATION STATUS
   ======================================================= */
+
+  const registrationDeadlinePassed = Boolean(
+    event.registrationDeadline &&
+    new Date(`${event.registrationDeadline}T23:59:59`).getTime() < Date.now(),
+  );
 
   const isRegistrationOpen =
     event.registrationOpen !== false &&
     event.registration?.open !== false &&
     event.status !== "cancelled" &&
-    event.status !== "archived";
+    event.status !== "archived" &&
+    !registrationDeadlinePassed;
 
   /* =======================================================
      USER DATA -> FORM
   ======================================================= */
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     const currentValues = getValues();
 
@@ -522,7 +629,9 @@ const ReunionRegister = () => {
   ======================================================= */
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading) {
+      return;
+    }
 
     if (!user) {
       toast.error("Please login before registering for the reunion.");
@@ -542,7 +651,51 @@ const ReunionRegister = () => {
 
   const registrationMutation = useMutation({
     mutationFn: async (formData) => {
-      const eventId = normalizeId(event._id) || normalizeId(event.id);
+      if (!eventId) {
+        throw new Error("Reunion event ID is missing.");
+      }
+
+      if (!user?.email) {
+        throw new Error("Authenticated user email is missing.");
+      }
+
+      if (
+        formData.email.trim().toLowerCase() !== user.email.trim().toLowerCase()
+      ) {
+        throw new Error(
+          "Registration email must match your logged-in account.",
+        );
+      }
+
+      if (!selectedPackage?.packageId) {
+        throw new Error("Please select a valid reunion package.");
+      }
+
+      if (!selectedTshirtSizes.includes(formData.tShirtSize)) {
+        throw new Error("Please select a valid T-shirt size.");
+      }
+
+      /* =================================================
+           IMPORTANT SERVER CONTRACT
+
+           Backend expects:
+
+           reunion: {
+             eventId,
+             packageId,
+             tShirt: {
+               size
+             }
+           }
+
+           NOT:
+
+           reunion: {
+             eventId,
+             packageId,
+             tShirtSize
+           }
+        ================================================= */
 
       const payload = {
         participant: {
@@ -572,7 +725,9 @@ const ReunionRegister = () => {
 
           packageId: formData.packageId,
 
-          tShirtSize: formData.tShirtSize,
+          tShirt: {
+            size: formData.tShirtSize,
+          },
         },
 
         consent: {
@@ -591,11 +746,18 @@ const ReunionRegister = () => {
     },
 
     onSuccess: (data) => {
-      setSubmittedRegistration(data?.registration || data?.data || data);
+      const registration = extractRegistrationFromResponse(data);
+
+      setSubmittedRegistration(registration);
 
       toast.success("Your reunion registration was completed successfully!");
 
       setStep(4);
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
     },
 
     onError: (error) => {
@@ -607,6 +769,7 @@ const ReunionRegister = () => {
         toast.error("Your login session has expired. Please login again.");
 
         navigate("/login", {
+          replace: true,
           state: {
             from: "/reunion-register",
           },
@@ -638,7 +801,7 @@ const ReunionRegister = () => {
   });
 
   /* =======================================================
-     STEP VALIDATION
+     NEXT STEP
   ======================================================= */
 
   const handleNextStep = async () => {
@@ -647,6 +810,20 @@ const ReunionRegister = () => {
 
       if (!valid) {
         toast.error("Please complete your personal information.");
+
+        return;
+      }
+
+      const currentEmail = getValues("email")?.trim().toLowerCase();
+
+      const authenticatedEmail = user?.email?.trim().toLowerCase();
+
+      if (authenticatedEmail && currentEmail !== authenticatedEmail) {
+        setValue("email", user.email, {
+          shouldValidate: true,
+        });
+
+        toast.error("Email must match your logged-in account.");
 
         return;
       }
@@ -682,10 +859,12 @@ const ReunionRegister = () => {
         top: 0,
         behavior: "smooth",
       });
-
-      return;
     }
   };
+
+  /* =======================================================
+     PREVIOUS STEP
+  ======================================================= */
 
   const handlePreviousStep = () => {
     if (step > 1) {
@@ -703,7 +882,9 @@ const ReunionRegister = () => {
   ======================================================= */
 
   const onSubmit = async (data) => {
-    if (step !== 3) return;
+    if (step !== 3) {
+      return;
+    }
 
     const valid = await trigger(["packageId", "tShirtSize", "agreeToRules"]);
 
@@ -715,6 +896,20 @@ const ReunionRegister = () => {
 
     if (!data.agreeToRules) {
       toast.error("Please agree to the reunion rules and confirmation.");
+
+      return;
+    }
+
+    if (!eventId) {
+      toast.error(
+        "Reunion event information is missing. Please reload the page.",
+      );
+
+      return;
+    }
+
+    if (!isRegistrationOpen) {
+      toast.error("Reunion registration is currently closed.");
 
       return;
     }
@@ -745,7 +940,7 @@ const ReunionRegister = () => {
   }
 
   /* =======================================================
-     ERROR
+     EVENT ERROR
   ======================================================= */
 
   if (eventError) {
@@ -761,7 +956,7 @@ const ReunionRegister = () => {
           </h2>
 
           <p className="mt-3 text-slate-600">
-            We could not load the current reunion information. Please try again.
+            {getApiErrorMessage(eventQueryError)}
           </p>
 
           <button
@@ -826,7 +1021,7 @@ const ReunionRegister = () => {
     const registrationId =
       submittedRegistration?.registrationId ||
       submittedRegistration?.id ||
-      submittedRegistration?._id ||
+      normalizeId(submittedRegistration?._id) ||
       "";
 
     return (
@@ -952,7 +1147,7 @@ const ReunionRegister = () => {
   }
 
   /* =======================================================
-     MAIN REGISTRATION UI
+     MAIN UI
   ======================================================= */
 
   return (
@@ -1196,7 +1391,6 @@ const ReunionRegister = () => {
                         type="text"
                         {...register("name", {
                           required: "Full name is required.",
-
                           minLength: {
                             value: 2,
                             message: "Name must contain at least 2 characters.",
@@ -1254,6 +1448,12 @@ const ReunionRegister = () => {
                     {errors.email && (
                       <p className="mt-2 text-sm text-red-600">
                         {errors.email.message}
+                      </p>
+                    )}
+
+                    {user?.email && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Registration email: {user.email}
                       </p>
                     )}
                   </div>
@@ -1371,7 +1571,7 @@ const ReunionRegister = () => {
 
                           {(event.eligibility?.classLevels?.length
                             ? event.eligibility.classLevels
-                            : ["6", "7", "8", "9", "10"]
+                            : DEFAULT_CLASS_LEVELS
                           ).map((level) => (
                             <option key={level} value={String(level)}>
                               Class {level}
@@ -1668,6 +1868,7 @@ const ReunionRegister = () => {
                                       className="flex items-center gap-2 text-sm text-slate-600"
                                     >
                                       <FiCheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+
                                       <span>{normalizeGiftItem(item)}</span>
                                     </div>
                                   ))}
@@ -1707,10 +1908,7 @@ const ReunionRegister = () => {
                             : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
                         }`}
                       >
-                        {(selectedPackage?.tshirt?.sizes?.length
-                          ? selectedPackage.tshirt.sizes
-                          : ["XS", "S", "M", "L", "XL", "2XL", "3XL"]
-                        ).map((size) => (
+                        {selectedTshirtSizes.map((size) => (
                           <option key={size} value={size}>
                             {size}
                           </option>
