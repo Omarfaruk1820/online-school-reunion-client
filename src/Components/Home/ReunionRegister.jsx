@@ -1,40 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   FiArrowLeft,
   FiArrowRight,
   FiCalendar,
-  FiCheck,
   FiCheckCircle,
   FiChevronDown,
   FiClock,
   FiGift,
-  FiHome,
   FiLoader,
-  FiMail,
+  FiLock,
   FiMapPin,
-  FiPackage,
-  FiPhone,
+  FiRefreshCw,
   FiShield,
   FiUser,
   FiUsers,
 } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 
-import useAuth from "../../hooks/useAuth";
 import axiosSecure from "../../hooks/axiosSecure";
-
-/* =========================================================
-   API
-========================================================= */
+import useAuth from "../../hooks/useAuth";
 
 const API_EVENT_URL = "/registrations";
-
-/* =========================================================
-   DEFAULT DATA
-========================================================= */
 
 const DEFAULT_GIFT_ITEMS = [
   "Commemorative Reunion Bag",
@@ -74,14 +63,11 @@ const DEFAULT_PACKAGES = [
 
 const DEFAULT_EVENT = {
   _id: "default-reunion-event",
-
   title: "Grand School Reunion 2027",
   shortTitle: "Grand Reunion 2027",
   edition: "76 Years Celebration",
-
   eventType: "school-reunion",
   status: "published",
-
   eventDate: "2027-02-22",
   weekday: "Monday",
   startTime: "09:00",
@@ -149,9 +135,9 @@ const DEFAULT_EVENT = {
   },
 };
 
-/* =========================================================
-   HELPERS
-========================================================= */
+/* -------------------------------------------------------
+   Helpers
+------------------------------------------------------- */
 
 const normalizeId = (value) => {
   if (!value) return "";
@@ -175,6 +161,20 @@ const normalizeId = (value) => {
   }
 
   return String(value);
+};
+
+const normalizeString = (value) => {
+  return String(value || "").trim();
+};
+
+const normalizeTshirtSize = (value) => {
+  const size = normalizeString(value).toUpperCase();
+
+  if (size === "XXL") {
+    return "2XL";
+  }
+
+  return size;
 };
 
 const normalizeVenue = (venue) => {
@@ -243,13 +243,14 @@ const normalizePackages = (packages) => {
 
       const sizes =
         Array.isArray(pkg.tshirt?.sizes) && pkg.tshirt.sizes.length > 0
-          ? pkg.tshirt.sizes.map(String)
+          ? pkg.tshirt.sizes.map(normalizeTshirtSize).filter(Boolean)
           : DEFAULT_TSHIRT_SIZES;
 
       return {
         ...pkg,
 
         id: String(packageId),
+
         packageId: String(packageId),
 
         name: pkg.name || pkg.title || "General Reunion Package",
@@ -293,9 +294,10 @@ const normalizeEvent = (event) => {
 
   return {
     ...DEFAULT_EVENT,
+
     ...event,
 
-    _id: event._id || event.id || DEFAULT_EVENT._id,
+    _id: normalizeId(event._id || event.id) || DEFAULT_EVENT._id,
 
     venue: normalizeVenue(event.venue),
 
@@ -413,9 +415,27 @@ const extractRegistrationFromResponse = (responseData) => {
   );
 };
 
-/* =========================================================
-   COMPONENT
-========================================================= */
+const isDeadlinePassed = (deadline) => {
+  if (!deadline) {
+    return false;
+  }
+
+  const value = String(deadline).trim();
+
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T23:59:59+06:00`)
+    : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return Date.now() > date.getTime();
+};
+
+/* -------------------------------------------------------
+   Component
+------------------------------------------------------- */
 
 const ReunionRegister = () => {
   const navigate = useNavigate();
@@ -423,11 +443,8 @@ const ReunionRegister = () => {
   const { user, loading: authLoading } = useAuth();
 
   const [step, setStep] = useState(1);
-  const [submittedRegistration, setSubmittedRegistration] = useState(null);
 
-  /* =======================================================
-     FORM
-  ======================================================= */
+  const [submittedRegistration, setSubmittedRegistration] = useState(null);
 
   const {
     register,
@@ -442,22 +459,16 @@ const ReunionRegister = () => {
 
     defaultValues: {
       studentType: "alumni",
-
       name: "",
       email: "",
       phone: "",
-
       classLevel: "",
       batchYear: "",
       department: "",
-
       district: "",
       city: "",
-
       tShirtSize: "L",
-
       packageId: "general",
-
       agreeToRules: false,
     },
   });
@@ -474,9 +485,9 @@ const ReunionRegister = () => {
 
   const isSeniorClass = classLevel === "9" || classLevel === "10";
 
-  /* =======================================================
-     EVENT QUERY
-  ======================================================= */
+  /* -------------------------------------------------------
+     Event Query
+  ------------------------------------------------------- */
 
   const {
     data: eventResponse,
@@ -498,9 +509,9 @@ const ReunionRegister = () => {
     retry: 1,
   });
 
-  /* =======================================================
-     NORMALIZED EVENT
-  ======================================================= */
+  /* -------------------------------------------------------
+     Event Data
+  ------------------------------------------------------- */
 
   const event = useMemo(() => {
     const serverEvent = extractEventFromResponse(eventResponse);
@@ -508,17 +519,9 @@ const ReunionRegister = () => {
     return normalizeEvent(serverEvent);
   }, [eventResponse]);
 
-  /* =======================================================
-     EVENT ID
-  ======================================================= */
-
   const eventId = useMemo(() => {
     return normalizeId(event?._id || event?.id);
   }, [event]);
-
-  /* =======================================================
-     EVENT GIFT ITEMS
-  ======================================================= */
 
   const eventGiftItems = useMemo(() => {
     if (Array.isArray(event?.gifts?.items) && event.gifts.items.length > 0) {
@@ -528,17 +531,9 @@ const ReunionRegister = () => {
     return DEFAULT_GIFT_ITEMS;
   }, [event]);
 
-  /* =======================================================
-     PACKAGES
-  ======================================================= */
-
   const packages = useMemo(() => {
     return normalizePackages(extractPackagesFromResponse(eventResponse));
   }, [eventResponse]);
-
-  /* =======================================================
-     SELECTED PACKAGE
-  ======================================================= */
 
   const selectedPackage = useMemo(() => {
     return (
@@ -551,52 +546,44 @@ const ReunionRegister = () => {
     );
   }, [packages, selectedPackageId]);
 
-  /* =======================================================
-     SELECTED PACKAGE SIZES
-  ======================================================= */
-
   const selectedTshirtSizes = useMemo(() => {
     if (
       Array.isArray(selectedPackage?.tshirt?.sizes) &&
       selectedPackage.tshirt.sizes.length > 0
     ) {
-      return selectedPackage.tshirt.sizes;
+      return selectedPackage.tshirt.sizes.map(normalizeTshirtSize);
     }
 
     return DEFAULT_TSHIRT_SIZES;
   }, [selectedPackage]);
 
-  /* =======================================================
-     KEEP T-SHIRT SIZE VALID
-  ======================================================= */
+  /* -------------------------------------------------------
+     Keep T-Shirt Size Valid
+  ------------------------------------------------------- */
 
   useEffect(() => {
-    if (!selectedTshirtSizes.includes(tShirtSize)) {
-      setValue("tShirtSize", selectedTshirtSizes[0] || "L", {
+    const normalizedSizes = selectedTshirtSizes.map(normalizeTshirtSize);
+
+    const normalizedCurrentSize = normalizeTshirtSize(tShirtSize);
+
+    if (!normalizedSizes.includes(normalizedCurrentSize)) {
+      setValue("tShirtSize", normalizedSizes[0] || "L", {
+        shouldValidate: true,
+      });
+
+      return;
+    }
+
+    if (normalizedCurrentSize !== tShirtSize) {
+      setValue("tShirtSize", normalizedCurrentSize, {
         shouldValidate: true,
       });
     }
   }, [selectedTshirtSizes, tShirtSize, setValue]);
 
-  /* =======================================================
-     REGISTRATION STATUS
-  ======================================================= */
-
-  const registrationDeadlinePassed = Boolean(
-    event.registrationDeadline &&
-    new Date(`${event.registrationDeadline}T23:59:59`).getTime() < Date.now(),
-  );
-
-  const isRegistrationOpen =
-    event.registrationOpen !== false &&
-    event.registration?.open !== false &&
-    event.status !== "cancelled" &&
-    event.status !== "archived" &&
-    !registrationDeadlinePassed;
-
-  /* =======================================================
-     USER DATA -> FORM
-  ======================================================= */
+  /* -------------------------------------------------------
+     Populate Auth User
+  ------------------------------------------------------- */
 
   useEffect(() => {
     if (!user) {
@@ -624,9 +611,9 @@ const ReunionRegister = () => {
     }
   }, [user, getValues, setValue]);
 
-  /* =======================================================
-     AUTH REDIRECT
-  ======================================================= */
+  /* -------------------------------------------------------
+     Redirect if Not Logged In
+  ------------------------------------------------------- */
 
   useEffect(() => {
     if (authLoading) {
@@ -638,6 +625,7 @@ const ReunionRegister = () => {
 
       navigate("/login", {
         replace: true,
+
         state: {
           from: "/reunion-register",
         },
@@ -645,9 +633,24 @@ const ReunionRegister = () => {
     }
   }, [user, authLoading, navigate]);
 
-  /* =======================================================
-     SUBMIT MUTATION
-  ======================================================= */
+  /* -------------------------------------------------------
+     Registration Status
+  ------------------------------------------------------- */
+
+  const registrationDeadlinePassed = isDeadlinePassed(
+    event.registrationDeadline,
+  );
+
+  const isRegistrationOpen =
+    event.registrationOpen !== false &&
+    event.registration?.open !== false &&
+    event.status !== "cancelled" &&
+    event.status !== "archived" &&
+    !registrationDeadlinePassed;
+
+  /* -------------------------------------------------------
+     Mutation
+  ------------------------------------------------------- */
 
   const registrationMutation = useMutation({
     mutationFn: async (formData) => {
@@ -659,9 +662,11 @@ const ReunionRegister = () => {
         throw new Error("Authenticated user email is missing.");
       }
 
-      if (
-        formData.email.trim().toLowerCase() !== user.email.trim().toLowerCase()
-      ) {
+      const formEmail = normalizeString(formData.email).toLowerCase();
+
+      const authEmail = normalizeString(user.email).toLowerCase();
+
+      if (formEmail !== authEmail) {
         throw new Error(
           "Registration email must match your logged-in account.",
         );
@@ -671,71 +676,71 @@ const ReunionRegister = () => {
         throw new Error("Please select a valid reunion package.");
       }
 
-      if (!selectedTshirtSizes.includes(formData.tShirtSize)) {
+      const normalizedTshirtSize = normalizeTshirtSize(formData.tShirtSize);
+
+      const normalizedAvailableSizes =
+        selectedTshirtSizes.map(normalizeTshirtSize);
+
+      if (!normalizedAvailableSizes.includes(normalizedTshirtSize)) {
         throw new Error("Please select a valid T-shirt size.");
       }
 
-      /* =================================================
-           IMPORTANT SERVER CONTRACT
-
-           Backend expects:
-
-           reunion: {
-             eventId,
-             packageId,
-             tShirt: {
-               size
-             }
-           }
-
-           NOT:
-
-           reunion: {
-             eventId,
-             packageId,
-             tShirtSize
-           }
-        ================================================= */
+      if (!formData.agreeToRules) {
+        throw new Error("Please agree to the reunion rules.");
+      }
 
       const payload = {
         participant: {
-          studentType: formData.studentType,
+          name: normalizeString(formData.name),
 
-          name: formData.name.trim(),
+          email: formEmail,
 
-          email: formData.email.trim().toLowerCase(),
-
-          phone: formData.phone.trim(),
+          phone: normalizeString(formData.phone),
         },
 
         schoolInfo: {
+          studentType: formData.studentType,
+
           classLevel: formData.classLevel,
 
           batchYear: Number(formData.batchYear),
 
           department: isSeniorClass ? formData.department : null,
 
-          district: formData.district.trim(),
+          district: normalizeString(formData.district),
 
-          city: formData.city.trim(),
+          city: normalizeString(formData.city),
         },
 
         reunion: {
           eventId,
 
-          packageId: formData.packageId,
+          packageId: selectedPackage.packageId,
 
           tShirt: {
-            size: formData.tShirtSize,
+            size: normalizedTshirtSize,
           },
         },
 
         consent: {
-          agreedToRules: Boolean(formData.agreeToRules),
+          agreedToRules: formData.agreeToRules === true,
 
           agreedAt: new Date().toISOString(),
         },
       };
+
+      /* Development debugging */
+      console.group("📤 REGISTRATION REQUEST");
+
+      console.log("Event ID:", eventId);
+
+      console.log("Authenticated Email:", user.email);
+
+      console.log("Payload:", payload);
+
+      console.log("Payload JSON:", JSON.stringify(payload, null, 2));
+
+      console.groupEnd();
 
       const response = await axiosSecure.post(
         `${API_EVENT_URL}/register`,
@@ -765,11 +770,32 @@ const ReunionRegister = () => {
 
       const code = error?.response?.data?.code;
 
+      const serverData = error?.response?.data;
+
+      console.group("❌ REGISTRATION ERROR");
+
+      console.error("Status:", status);
+
+      console.error("Code:", code);
+
+      console.error("Server Response:", serverData);
+
+      console.error("Message:", serverData?.message);
+
+      console.error("Request URL:", error?.config?.url);
+
+      console.error("Request Method:", error?.config?.method);
+
+      console.error("Request Data:", error?.config?.data);
+
+      console.groupEnd();
+
       if (status === 401) {
         toast.error("Your login session has expired. Please login again.");
 
         navigate("/login", {
           replace: true,
+
           state: {
             from: "/reunion-register",
           },
@@ -800,30 +826,16 @@ const ReunionRegister = () => {
     },
   });
 
-  /* =======================================================
-     NEXT STEP
-  ======================================================= */
+  /* -------------------------------------------------------
+     Step Validation
+  ------------------------------------------------------- */
 
-  const handleNextStep = async () => {
+  const handleNext = async () => {
     if (step === 1) {
       const valid = await trigger(["studentType", "name", "email", "phone"]);
 
       if (!valid) {
-        toast.error("Please complete your personal information.");
-
-        return;
-      }
-
-      const currentEmail = getValues("email")?.trim().toLowerCase();
-
-      const authenticatedEmail = user?.email?.trim().toLowerCase();
-
-      if (authenticatedEmail && currentEmail !== authenticatedEmail) {
-        setValue("email", user.email, {
-          shouldValidate: true,
-        });
-
-        toast.error("Email must match your logged-in account.");
+        toast.error("Please complete all personal information.");
 
         return;
       }
@@ -848,7 +860,7 @@ const ReunionRegister = () => {
       const valid = await trigger(fields);
 
       if (!valid) {
-        toast.error("Please complete your school information.");
+        toast.error("Please complete all school information.");
 
         return;
       }
@@ -859,16 +871,22 @@ const ReunionRegister = () => {
         top: 0,
         behavior: "smooth",
       });
+
+      return;
     }
-  };
 
-  /* =======================================================
-     PREVIOUS STEP
-  ======================================================= */
+    if (step === 3) {
+      const valid = await trigger(["packageId", "tShirtSize", "agreeToRules"]);
 
-  const handlePreviousStep = () => {
-    if (step > 1) {
-      setStep((current) => current - 1);
+      if (!valid) {
+        toast.error(
+          "Please complete the reunion package and confirmation section.",
+        );
+
+        return;
+      }
+
+      setStep(4);
 
       window.scrollTo({
         top: 0,
@@ -877,93 +895,123 @@ const ReunionRegister = () => {
     }
   };
 
-  /* =======================================================
-     FINAL SUBMIT
-  ======================================================= */
-
-  const onSubmit = async (data) => {
-    if (step !== 3) {
+  const handleBack = () => {
+    if (step <= 1) {
       return;
     }
 
-    const valid = await trigger(["packageId", "tShirtSize", "agreeToRules"]);
+    setStep((previous) => previous - 1);
 
-    if (!valid) {
-      toast.error("Please complete the reunion package and consent section.");
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
 
-      return;
-    }
-
-    if (!data.agreeToRules) {
-      toast.error("Please agree to the reunion rules and confirmation.");
-
-      return;
-    }
-
-    if (!eventId) {
-      toast.error(
-        "Reunion event information is missing. Please reload the page.",
-      );
-
-      return;
-    }
-
+  const handleFinalSubmit = handleSubmit(() => {
     if (!isRegistrationOpen) {
       toast.error("Reunion registration is currently closed.");
 
       return;
     }
 
-    registrationMutation.mutate(data);
-  };
+    if (!agreeToRules) {
+      toast.error("Please agree to the reunion rules.");
 
-  /* =======================================================
-     LOADING
-  ======================================================= */
+      return;
+    }
 
-  if (authLoading || (eventLoading && user)) {
+    registrationMutation.mutate(getValues());
+  });
+
+  /* -------------------------------------------------------
+     Loading
+  ------------------------------------------------------- */
+
+  if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-100">
-            <FiLoader className="h-7 w-7 animate-spin text-blue-600" />
-          </div>
+          <FiLoader className="mx-auto mb-4 h-10 w-10 animate-spin text-blue-600" />
 
-          <h2 className="text-xl font-bold text-slate-800">
-            Loading Reunion Registration
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-500">Please wait a moment...</p>
+          <p className="text-sm font-medium text-slate-600">
+            Checking your account...
+          </p>
         </div>
       </div>
     );
   }
 
-  /* =======================================================
-     EVENT ERROR
-  ======================================================= */
-
-  if (eventError) {
+  if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-lg rounded-2xl bg-white p-8 text-center shadow-sm border border-slate-200">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
-            <FiCalendar className="h-8 w-8 text-red-600" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
+          <FiLock className="mx-auto mb-4 h-10 w-10 text-slate-400" />
+
+          <h2 className="text-xl font-bold text-slate-900">Login Required</h2>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Please login before registering for the reunion.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* -------------------------------------------------------
+     Event Loading
+  ------------------------------------------------------- */
+
+  if (eventLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <FiLoader className="mx-auto mb-4 h-10 w-10 animate-spin text-blue-600" />
+
+          <h2 className="text-lg font-bold text-slate-900">
+            Loading Reunion Registration
+          </h2>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Please wait while we load the reunion information.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* -------------------------------------------------------
+     Event Error
+  ------------------------------------------------------- */
+
+  if (eventError && !eventResponse) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-16">
+        <div className="mx-auto max-w-xl rounded-2xl bg-white p-8 text-center shadow-lg">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+            <FiRefreshCw className="h-7 w-7 text-red-500" />
           </div>
 
           <h2 className="text-2xl font-bold text-slate-900">
-            Unable to Load Reunion
+            Unable to Load Registration
           </h2>
 
-          <p className="mt-3 text-slate-600">
-            {getApiErrorMessage(eventQueryError)}
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            We could not load the reunion registration information right now.
           </p>
+
+          {eventQueryError && (
+            <p className="mt-2 text-xs text-red-500">
+              {getApiErrorMessage(eventQueryError)}
+            </p>
+          )}
 
           <button
             type="button"
             onClick={() => refetchEvent()}
-            className="mt-6 rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
           >
+            <FiRefreshCw />
             Try Again
           </button>
         </div>
@@ -971,170 +1019,201 @@ const ReunionRegister = () => {
     );
   }
 
-  /* =======================================================
-     REGISTRATION CLOSED
-  ======================================================= */
+  /* -------------------------------------------------------
+     Registration Closed
+  ------------------------------------------------------- */
 
   if (!isRegistrationOpen) {
     return (
-      <div className="min-h-screen bg-slate-50 py-16 px-4">
-        <div className="mx-auto max-w-3xl">
-          <div className="rounded-3xl bg-white p-8 text-center shadow-sm border border-slate-200 md:p-12">
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100">
-              <FiCalendar className="h-10 w-10 text-amber-600" />
+      <div className="min-h-screen bg-slate-50 px-4 py-12">
+        <div className="mx-auto max-w-4xl">
+          <div className="overflow-hidden rounded-3xl bg-white shadow-xl">
+            <div className="bg-slate-900 px-6 py-12 text-center text-white sm:px-10">
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
+                <FiLock className="h-8 w-8" />
+              </div>
+
+              <h1 className="text-3xl font-black sm:text-4xl">
+                Registration Closed
+              </h1>
+
+              <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                Registration for the Grand School Reunion 2027 is currently
+                closed.
+              </p>
             </div>
 
-            <h1 className="text-3xl font-extrabold text-slate-900">
-              Registration Is Closed
-            </h1>
+            <div className="grid gap-6 p-6 sm:grid-cols-3 sm:p-10">
+              <div className="rounded-2xl bg-slate-50 p-5 text-center">
+                <FiCalendar className="mx-auto mb-3 h-7 w-7 text-blue-600" />
 
-            <p className="mx-auto mt-4 max-w-xl text-slate-600">
-              Registration for <strong>{event.title}</strong> is currently
-              closed.
-            </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Date
+                </p>
 
-            {event.registrationDeadline && (
-              <p className="mt-3 text-sm text-slate-500">
-                Registration deadline:{" "}
-                {formatEventDate(event.registrationDeadline)}
-              </p>
-            )}
+                <p className="mt-1 font-bold text-slate-900">
+                  {formatEventDate(event.eventDate)}
+                </p>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="mt-8 rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white hover:bg-blue-700"
-            >
-              Back to Home
-            </button>
+              <div className="rounded-2xl bg-slate-50 p-5 text-center">
+                <FiClock className="mx-auto mb-3 h-7 w-7 text-blue-600" />
+
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Time
+                </p>
+
+                <p className="mt-1 font-bold text-slate-900">
+                  {event.startTime} - {event.endTime}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-5 text-center">
+                <FiMapPin className="mx-auto mb-3 h-7 w-7 text-blue-600" />
+
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Venue
+                </p>
+
+                <p className="mt-1 font-bold text-slate-900">
+                  {event.venue?.name || "School Campus"}
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 p-6 text-center">
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <FiArrowLeft />
+                Back to Home
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  /* =======================================================
-     SUCCESS SCREEN
-  ======================================================= */
+  /* -------------------------------------------------------
+     Success Screen
+  ------------------------------------------------------- */
 
-  if (step === 4) {
+  if (step === 4 && submittedRegistration) {
     const registrationId =
-      submittedRegistration?.registrationId ||
-      submittedRegistration?.id ||
-      normalizeId(submittedRegistration?._id) ||
-      "";
+      submittedRegistration.registrationId ||
+      submittedRegistration.id ||
+      submittedRegistration._id ||
+      "Registered";
 
     return (
-      <div className="min-h-screen bg-slate-50 py-12 px-4 md:py-20">
+      <div className="min-h-screen bg-slate-50 px-4 py-12">
         <div className="mx-auto max-w-3xl">
-          <div className="overflow-hidden rounded-3xl bg-white shadow-xl border border-slate-200">
-            <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-10 text-center text-white md:px-10">
-              <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-white/20">
-                <FiCheckCircle className="h-12 w-12" />
+          <div className="overflow-hidden rounded-3xl bg-white shadow-xl">
+            <div className="bg-gradient-to-br from-emerald-600 to-green-700 px-6 py-12 text-center text-white sm:px-10">
+              <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-white/15">
+                <FiCheckCircle className="h-11 w-11" />
               </div>
 
-              <h1 className="text-3xl font-extrabold md:text-4xl">
+              <h1 className="text-3xl font-black sm:text-4xl">
                 Registration Successful!
               </h1>
 
-              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-emerald-50 md:text-base">
-                Thank you for registering for the {event.title}.
+              <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-emerald-50 sm:text-base">
+                Your registration for the Grand School Reunion 2027 has been
+                successfully completed.
               </p>
             </div>
 
-            <div className="p-6 md:p-10">
-              {registrationId && (
-                <div className="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-5 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
-                    Registration ID
-                  </p>
+            <div className="p-6 sm:p-10">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-6 text-center">
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  Registration ID
+                </p>
 
-                  <p className="mt-2 break-all text-xl font-extrabold text-blue-900">
-                    {registrationId}
-                  </p>
-                </div>
-              )}
+                <p className="mt-2 break-all text-2xl font-black tracking-wide text-emerald-900">
+                  {registrationId}
+                </p>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 p-5">
-                  <FiCalendar className="mb-3 h-6 w-6 text-blue-600" />
+                <p className="mt-3 text-sm text-emerald-700">
+                  Please save this registration ID for future reference.
+                </p>
+              </div>
 
+              <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl bg-slate-50 p-5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Event Date
+                    Participant
                   </p>
 
                   <p className="mt-1 font-bold text-slate-900">
-                    {formatEventDate(event.eventDate)}
+                    {getValues("name")}
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 p-5">
-                  <FiClock className="mb-3 h-6 w-6 text-blue-600" />
-
+                <div className="rounded-2xl bg-slate-50 p-5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Event Time
+                    T-Shirt Size
                   </p>
 
                   <p className="mt-1 font-bold text-slate-900">
-                    {event.startTime} - {event.endTime}
+                    {normalizeTshirtSize(getValues("tShirtSize"))}
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 p-5">
-                  <FiMapPin className="mb-3 h-6 w-6 text-blue-600" />
-
+                <div className="rounded-2xl bg-slate-50 p-5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Venue
-                  </p>
-
-                  <p className="mt-1 font-bold text-slate-900">
-                    {formatVenue(event.venue)}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 p-5">
-                  <FiGift className="mb-3 h-6 w-6 text-blue-600" />
-
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Reunion Package
+                    Package
                   </p>
 
                   <p className="mt-1 font-bold text-slate-900">
                     {selectedPackage.name}
                   </p>
                 </div>
+
+                <div className="rounded-2xl bg-slate-50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
+                  </p>
+
+                  <p className="mt-1 font-bold capitalize text-emerald-600">
+                    {submittedRegistration.status || "Confirmed"}
+                  </p>
+                </div>
               </div>
 
-              <div className="mt-8 rounded-2xl bg-slate-50 p-5">
-                <div className="flex items-start gap-3">
-                  <FiShield className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+              <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50 p-5">
+                <div className="flex gap-3">
+                  <FiShield className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
 
                   <div>
-                    <h3 className="font-bold text-slate-900">What's next?</h3>
+                    <h3 className="font-bold text-blue-900">What's Next?</h3>
 
-                    <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Please keep your registration ID safe. Your registration
-                      will be used for reunion attendance and gift distribution.
-                      If QR attendance is enabled, your QR code will be
-                      associated with your registration.
+                    <p className="mt-1 text-sm leading-6 text-blue-800">
+                      Your reunion registration has been recorded. Please keep
+                      your registration ID. It may be used for attendance and
+                      gift distribution at the reunion.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
                 <button
                   type="button"
-                  onClick={() => navigate("/dashboard/student")}
-                  className="flex-1 rounded-xl bg-blue-600 px-6 py-3.5 font-semibold text-white transition hover:bg-blue-700"
+                  onClick={() => navigate("/dashboard/registrations")}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
                 >
-                  Go to Dashboard
+                  <FiUser />
+                  View My Registration
                 </button>
 
                 <button
                   type="button"
                   onClick={() => navigate("/")}
-                  className="flex-1 rounded-xl border border-slate-300 bg-white px-6 py-3.5 font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
                 >
                   Back to Home
                 </button>
@@ -1146,407 +1225,351 @@ const ReunionRegister = () => {
     );
   }
 
-  /* =======================================================
-     MAIN UI
-  ======================================================= */
+  /* -------------------------------------------------------
+     Main Registration UI
+  ------------------------------------------------------- */
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* ===================================================
-          HEADER
-      =================================================== */}
+    <div className="min-h-screen bg-slate-50 py-8 sm:py-12">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-8 overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 p-6 text-white shadow-xl sm:p-10">
+          <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-blue-50">
+                <FiUsers />
 
-      <section className="relative overflow-hidden bg-slate-950 px-4 py-12 text-white md:py-16">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.35),transparent_40%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.2),transparent_35%)]" />
-
-        <div className="relative mx-auto max-w-7xl">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="mb-7 inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur transition hover:bg-white/15"
-          >
-            <FiArrowLeft />
-            Back
-          </button>
-
-          <div className="max-w-3xl">
-            <p className="mb-3 text-sm font-bold uppercase tracking-[0.2em] text-blue-300">
-              {event.edition}
-            </p>
-
-            <h1 className="text-3xl font-extrabold tracking-tight md:text-5xl">
-              {event.title}
-            </h1>
-
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 md:text-base">
-              Register now and become part of our special school reunion
-              celebration.
-            </p>
-
-            <div className="mt-7 flex flex-wrap gap-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-slate-200">
-                <FiCalendar className="text-blue-300" />
-                {formatEventDate(event.eventDate)}
+                {event.edition}
               </div>
 
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-slate-200">
-                <FiClock className="text-blue-300" />
-                {event.startTime} - {event.endTime}
-              </div>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                {event.title}
+              </h1>
 
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-slate-200">
-                <FiMapPin className="text-blue-300" />
-                {event.venue?.name || "School Campus"}
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-blue-100 sm:text-base">
+                Register now and join your classmates and alumni for our
+                memorable school reunion.
+              </p>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <div className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold">
+                  <FiCalendar />
+
+                  {formatEventDate(event.eventDate)}
+                </div>
+
+                <div className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold">
+                  <FiClock />
+                  {event.startTime} - {event.endTime}
+                </div>
+
+                <div className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold">
+                  <FiMapPin />
+
+                  {event.venue?.name || "School Campus"}
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden lg:block">
+              <div className="flex h-32 w-32 items-center justify-center rounded-full border border-white/20 bg-white/10">
+                <FiUsers className="h-16 w-16 text-white/90" />
               </div>
             </div>
           </div>
         </div>
-      </section>
 
-      {/* ===================================================
-          CONTENT
-      =================================================== */}
-
-      <main className="mx-auto max-w-7xl px-4 py-8 md:py-12">
-        {/* =================================================
-            STEPPER
-        ================================================= */}
-
-        <div className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-          <div className="grid grid-cols-3 gap-2 md:gap-6">
+        {/* Progress */}
+        <div className="mb-8 rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+          <div className="grid grid-cols-4 gap-2">
             {[
               {
                 number: 1,
-                label: "Personal",
+                title: "Personal",
               },
               {
                 number: 2,
-                label: "School",
+                title: "School",
               },
               {
                 number: 3,
-                label: "Confirmation",
+                title: "Package",
+              },
+              {
+                number: 4,
+                title: "Confirm",
               },
             ].map((item) => {
-              const active = step === item.number;
+              const active = step >= item.number;
 
-              const completed = step > item.number;
+              const current = step === item.number;
 
               return (
-                <div
-                  key={item.number}
-                  className="flex items-center gap-2 md:gap-3"
-                >
-                  <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                      completed
-                        ? "bg-emerald-600 text-white"
-                        : active
+                <div key={item.number} className="relative">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-black transition ${
+                        active
                           ? "bg-blue-600 text-white"
-                          : "bg-slate-100 text-slate-500"
-                    }`}
-                  >
-                    {completed ? <FiCheck /> : item.number}
-                  </div>
+                          : "bg-slate-100 text-slate-400"
+                      } ${current ? "ring-4 ring-blue-100" : ""}`}
+                    >
+                      {item.number}
+                    </div>
 
-                  <div className="hidden sm:block">
-                    <p
-                      className={`text-sm font-bold ${
-                        active || completed
-                          ? "text-slate-900"
-                          : "text-slate-400"
+                    <span
+                      className={`hidden text-sm font-bold sm:block ${
+                        active ? "text-slate-900" : "text-slate-400"
                       }`}
                     >
-                      {item.label}
-                    </p>
+                      {item.title}
+                    </span>
                   </div>
+
+                  {item.number < 4 && (
+                    <div
+                      className={`absolute left-10 right-0 top-4 h-0.5 ${
+                        step > item.number ? "bg-blue-600" : "bg-slate-100"
+                      }`}
+                    />
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* =================================================
-              FORM
-          ================================================= */}
-
-          <form onSubmit={handleSubmit(onSubmit)} className="min-w-0">
-            {/* =============================================
-                STEP 1
-            ============================================= */}
-
-            {step === 1 && (
-              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-200 p-6 md:p-8">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100">
+        <form onSubmit={handleFinalSubmit}>
+          {/* Main Grid */}
+          <div className="grid gap-8 lg:grid-cols-[1fr_330px]">
+            {/* Form */}
+            <div className="rounded-3xl bg-white p-6 shadow-lg sm:p-8">
+              {/* STEP 1 */}
+              {step === 1 && (
+                <div>
+                  <div className="mb-8">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50">
                       <FiUser className="h-6 w-6 text-blue-600" />
                     </div>
 
+                    <h2 className="text-2xl font-black text-slate-900">
+                      Personal Information
+                    </h2>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                      Tell us a little about yourself.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    {/* Student Type */}
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        Participant Type
+                      </label>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label
+                          className={`cursor-pointer rounded-2xl border p-4 transition ${
+                            studentType === "current"
+                              ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100"
+                              : "border-slate-200 hover:border-blue-300"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            value="current"
+                            className="sr-only"
+                            {...register("studentType", {
+                              required: "Please select participant type.",
+                            })}
+                          />
+
+                          <div className="flex items-center gap-3">
+                            <FiUser className="h-5 w-5 text-blue-600" />
+
+                            <div>
+                              <p className="font-bold text-slate-900">
+                                Current Student
+                              </p>
+
+                              <p className="text-xs text-slate-500">
+                                Currently studying at the school
+                              </p>
+                            </div>
+                          </div>
+                        </label>
+
+                        <label
+                          className={`cursor-pointer rounded-2xl border p-4 transition ${
+                            studentType === "alumni"
+                              ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100"
+                              : "border-slate-200 hover:border-blue-300"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            value="alumni"
+                            className="sr-only"
+                            {...register("studentType", {
+                              required: "Please select participant type.",
+                            })}
+                          />
+
+                          <div className="flex items-center gap-3">
+                            <FiUsers className="h-5 w-5 text-blue-600" />
+
+                            <div>
+                              <p className="font-bold text-slate-900">
+                                Alumni / Ex-Student
+                              </p>
+
+                              <p className="text-xs text-slate-500">
+                                Former student of the school
+                              </p>
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+
+                      {errors.studentType && (
+                        <p className="mt-2 text-xs font-medium text-red-500">
+                          {errors.studentType.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Name */}
                     <div>
-                      <h2 className="text-2xl font-extrabold text-slate-900">
-                        Personal Information
-                      </h2>
-
-                      <p className="mt-1 text-sm text-slate-500">
-                        Tell us a little about yourself.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-6 p-6 md:p-8">
-                  {/* Student Type */}
-
-                  <div>
-                    <label className="mb-3 block text-sm font-bold text-slate-700">
-                      You are registering as
-                    </label>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
                       <label
-                        className={`cursor-pointer rounded-2xl border p-4 transition ${
-                          studentType === "current"
-                            ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
-                            : "border-slate-200 hover:border-blue-300"
-                        }`}
+                        htmlFor="name"
+                        className="mb-2 block text-sm font-bold text-slate-700"
                       >
-                        <input
-                          type="radio"
-                          value="current"
-                          {...register("studentType", {
-                            required: "Please select your student type.",
-                          })}
-                          className="sr-only"
-                        />
-
-                        <div className="flex items-center gap-3">
-                          <FiUsers className="h-5 w-5 text-blue-600" />
-
-                          <div>
-                            <p className="font-bold text-slate-900">
-                              Current Student
-                            </p>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              Currently studying at the school
-                            </p>
-                          </div>
-                        </div>
+                        Full Name
                       </label>
-
-                      <label
-                        className={`cursor-pointer rounded-2xl border p-4 transition ${
-                          studentType === "alumni"
-                            ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
-                            : "border-slate-200 hover:border-blue-300"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          value="alumni"
-                          {...register("studentType", {
-                            required: "Please select your student type.",
-                          })}
-                          className="sr-only"
-                        />
-
-                        <div className="flex items-center gap-3">
-                          <FiUsers className="h-5 w-5 text-blue-600" />
-
-                          <div>
-                            <p className="font-bold text-slate-900">Alumni</p>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              Former student of the school
-                            </p>
-                          </div>
-                        </div>
-                      </label>
-                    </div>
-
-                    {errors.studentType && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {errors.studentType.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Name */}
-
-                  <div>
-                    <label
-                      htmlFor="name"
-                      className="mb-2 block text-sm font-bold text-slate-700"
-                    >
-                      Full Name
-                    </label>
-
-                    <div className="relative">
-                      <FiUser className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
 
                       <input
                         id="name"
                         type="text"
+                        placeholder="Enter your full name"
                         {...register("name", {
                           required: "Full name is required.",
                           minLength: {
                             value: 2,
-                            message: "Name must contain at least 2 characters.",
+                            message: "Name must be at least 2 characters.",
                           },
                         })}
-                        placeholder="Enter your full name"
-                        className={`w-full rounded-xl border bg-white py-3.5 pl-11 pr-4 outline-none transition focus:ring-2 ${
+                        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${
                           errors.name
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                            ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                            : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                         }`}
                       />
+
+                      {errors.name && (
+                        <p className="mt-1.5 text-xs text-red-500">
+                          {errors.name.message}
+                        </p>
+                      )}
                     </div>
 
-                    {errors.name && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {errors.name.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Email */}
-
-                  <div>
-                    <label
-                      htmlFor="email"
-                      className="mb-2 block text-sm font-bold text-slate-700"
-                    >
-                      Email Address
-                    </label>
-
-                    <div className="relative">
-                      <FiMail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    {/* Email */}
+                    <div>
+                      <label
+                        htmlFor="email"
+                        className="mb-2 block text-sm font-bold text-slate-700"
+                      >
+                        Email Address
+                      </label>
 
                       <input
                         id="email"
                         type="email"
+                        placeholder="your@email.com"
                         {...register("email", {
-                          required: "Email address is required.",
-
+                          required: "Email is required.",
                           pattern: {
                             value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
                             message: "Please enter a valid email address.",
                           },
                         })}
-                        placeholder="you@example.com"
-                        className={`w-full rounded-xl border bg-white py-3.5 pl-11 pr-4 outline-none transition focus:ring-2 ${
+                        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${
                           errors.email
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                            ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                            : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                         }`}
                       />
+
+                      {errors.email && (
+                        <p className="mt-1.5 text-xs text-red-500">
+                          {errors.email.message}
+                        </p>
+                      )}
                     </div>
 
-                    {errors.email && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {errors.email.message}
-                      </p>
-                    )}
-
-                    {user?.email && (
-                      <p className="mt-2 text-xs text-slate-500">
-                        Registration email: {user.email}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Phone */}
-
-                  <div>
-                    <label
-                      htmlFor="phone"
-                      className="mb-2 block text-sm font-bold text-slate-700"
-                    >
-                      Phone Number
-                    </label>
-
-                    <div className="relative">
-                      <FiPhone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    {/* Phone */}
+                    <div className="sm:col-span-2">
+                      <label
+                        htmlFor="phone"
+                        className="mb-2 block text-sm font-bold text-slate-700"
+                      >
+                        Mobile Number
+                      </label>
 
                       <input
                         id="phone"
                         type="tel"
+                        inputMode="numeric"
+                        placeholder="01XXXXXXXXX"
                         {...register("phone", {
-                          required: "Phone number is required.",
+                          required: "Mobile number is required.",
 
                           pattern: {
                             value: /^01[3-9]\d{8}$/,
                             message:
-                              "Enter a valid Bangladesh mobile number, e.g. 01712345678.",
+                              "Please enter a valid Bangladesh mobile number.",
                           },
                         })}
-                        placeholder="01712345678"
-                        inputMode="numeric"
-                        maxLength={11}
-                        className={`w-full rounded-xl border bg-white py-3.5 pl-11 pr-4 outline-none transition focus:ring-2 ${
+                        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${
                           errors.phone
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                            ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                            : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                         }`}
                       />
+
+                      {errors.phone && (
+                        <p className="mt-1.5 text-xs text-red-500">
+                          {errors.phone.message}
+                        </p>
+                      )}
+
+                      <p className="mt-1.5 text-xs text-slate-400">
+                        Example: 017XXXXXXXX
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2 */}
+              {step === 2 && (
+                <div>
+                  <div className="mb-8">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
+                      <FiUsers className="h-6 w-6 text-indigo-600" />
                     </div>
 
-                    {errors.phone && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {errors.phone.message}
-                      </p>
-                    )}
+                    <h2 className="text-2xl font-black text-slate-900">
+                      School Information
+                    </h2>
 
-                    <p className="mt-2 text-xs text-slate-500">
-                      Use your active Bangladesh mobile number.
+                    <p className="mt-2 text-sm text-slate-500">
+                      Provide your school-related information.
                     </p>
                   </div>
-                </div>
 
-                <div className="flex justify-end border-t border-slate-200 bg-slate-50 p-5 md:p-6">
-                  <button
-                    type="button"
-                    onClick={handleNextStep}
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 font-bold text-white transition hover:bg-blue-700"
-                  >
-                    Continue
-                    <FiArrowRight />
-                  </button>
-                </div>
-              </section>
-            )}
-
-            {/* =============================================
-                STEP 2
-            ============================================= */}
-
-            {step === 2 && (
-              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-200 p-6 md:p-8">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-100">
-                      <FiHome className="h-6 w-6 text-indigo-600" />
-                    </div>
-
-                    <div>
-                      <h2 className="text-2xl font-extrabold text-slate-900">
-                        School Information
-                      </h2>
-
-                      <p className="mt-1 text-sm text-slate-500">
-                        Provide your school class and batch information.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-6 p-6 md:p-8">
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-5 sm:grid-cols-2">
                     {/* Class */}
-
                     <div>
                       <label
                         htmlFor="classLevel"
@@ -1561,36 +1584,32 @@ const ReunionRegister = () => {
                           {...register("classLevel", {
                             required: "Please select your class.",
                           })}
-                          className={`w-full appearance-none rounded-xl border bg-white px-4 py-3.5 pr-10 outline-none transition focus:ring-2 ${
+                          className={`w-full appearance-none rounded-xl border bg-white px-4 py-3 pr-10 text-sm outline-none transition focus:ring-4 ${
                             errors.classLevel
-                              ? "border-red-400 focus:ring-red-100"
-                              : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                              ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                              : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                           }`}
                         >
                           <option value="">Select class</option>
 
-                          {(event.eligibility?.classLevels?.length
-                            ? event.eligibility.classLevels
-                            : DEFAULT_CLASS_LEVELS
-                          ).map((level) => (
-                            <option key={level} value={String(level)}>
+                          {DEFAULT_CLASS_LEVELS.map((level) => (
+                            <option key={level} value={level}>
                               Class {level}
                             </option>
                           ))}
                         </select>
 
-                        <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       </div>
 
                       {errors.classLevel && (
-                        <p className="mt-2 text-sm text-red-600">
+                        <p className="mt-1.5 text-xs text-red-500">
                           {errors.classLevel.message}
                         </p>
                       )}
                     </div>
 
                     {/* Batch */}
-
                     <div>
                       <label
                         htmlFor="batchYear"
@@ -1602,6 +1621,9 @@ const ReunionRegister = () => {
                       <input
                         id="batchYear"
                         type="number"
+                        min="1950"
+                        max="2100"
+                        placeholder="Example: 2011"
                         {...register("batchYear", {
                           required: "Batch year is required.",
 
@@ -1615,74 +1637,67 @@ const ReunionRegister = () => {
                             message: "Please enter a valid batch year.",
                           },
                         })}
-                        placeholder="e.g. 2015"
-                        className={`w-full rounded-xl border bg-white px-4 py-3.5 outline-none transition focus:ring-2 ${
+                        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${
                           errors.batchYear
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                            ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                            : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                         }`}
                       />
 
                       {errors.batchYear && (
-                        <p className="mt-2 text-sm text-red-600">
+                        <p className="mt-1.5 text-xs text-red-500">
                           {errors.batchYear.message}
                         </p>
                       )}
                     </div>
-                  </div>
 
-                  {/* Department */}
-
-                  {isSeniorClass && (
-                    <div>
-                      <label
-                        htmlFor="department"
-                        className="mb-2 block text-sm font-bold text-slate-700"
-                      >
-                        Department
-                        <span className="ml-1 text-red-500">*</span>
-                      </label>
-
-                      <div className="relative">
-                        <select
-                          id="department"
-                          {...register("department", {
-                            required:
-                              "Department is required for Class 9 and 10.",
-                          })}
-                          className={`w-full appearance-none rounded-xl border bg-white px-4 py-3.5 pr-10 outline-none transition focus:ring-2 ${
-                            errors.department
-                              ? "border-red-400 focus:ring-red-100"
-                              : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
-                          }`}
+                    {/* Department */}
+                    {isSeniorClass && (
+                      <div className="sm:col-span-2">
+                        <label
+                          htmlFor="department"
+                          className="mb-2 block text-sm font-bold text-slate-700"
                         >
-                          <option value="">Select department</option>
+                          Department
+                        </label>
 
-                          <option value="science">Science</option>
+                        <div className="relative">
+                          <select
+                            id="department"
+                            {...register("department", {
+                              required: "Please select your department.",
+                            })}
+                            className={`w-full appearance-none rounded-xl border bg-white px-4 py-3 pr-10 text-sm outline-none transition focus:ring-4 ${
+                              errors.department
+                                ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                                : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
+                            }`}
+                          >
+                            <option value="">Select department</option>
 
-                          <option value="commerce">Commerce</option>
+                            <option value="science">Science</option>
 
-                          <option value="humanities">Humanities</option>
+                            <option value="commerce">Commerce</option>
 
-                          <option value="vocational">
-                            Vocational / Technical
-                          </option>
-                        </select>
+                            <option value="humanities">Humanities</option>
 
-                        <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <option value="vocational">
+                              Vocational / Technical
+                            </option>
+                          </select>
+
+                          <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+
+                        {errors.department && (
+                          <p className="mt-1.5 text-xs text-red-500">
+                            {errors.department.message}
+                          </p>
+                        )}
                       </div>
+                    )}
 
-                      {errors.department && (
-                        <p className="mt-2 text-sm text-red-600">
-                          {errors.department.message}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Location */}
-
-                  <div className="grid gap-6 md:grid-cols-2">
+                    {/* District */}
                     <div>
                       <label
                         htmlFor="district"
@@ -1694,336 +1709,492 @@ const ReunionRegister = () => {
                       <input
                         id="district"
                         type="text"
+                        placeholder="Enter district"
                         {...register("district", {
                           required: "District is required.",
+                          minLength: {
+                            value: 2,
+                            message: "Please enter a valid district.",
+                          },
                         })}
-                        placeholder="e.g. Khulna"
-                        className={`w-full rounded-xl border bg-white px-4 py-3.5 outline-none transition focus:ring-2 ${
+                        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${
                           errors.district
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                            ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                            : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                         }`}
                       />
 
                       {errors.district && (
-                        <p className="mt-2 text-sm text-red-600">
+                        <p className="mt-1.5 text-xs text-red-500">
                           {errors.district.message}
                         </p>
                       )}
                     </div>
 
+                    {/* City */}
                     <div>
                       <label
                         htmlFor="city"
                         className="mb-2 block text-sm font-bold text-slate-700"
                       >
-                        City / Area
+                        City / Upazila
                       </label>
 
                       <input
                         id="city"
                         type="text"
+                        placeholder="Enter city or upazila"
                         {...register("city", {
-                          required: "City or area is required.",
+                          required: "City / Upazila is required.",
+                          minLength: {
+                            value: 2,
+                            message: "Please enter a valid city or upazila.",
+                          },
                         })}
-                        placeholder="e.g. Khulna City"
-                        className={`w-full rounded-xl border bg-white px-4 py-3.5 outline-none transition focus:ring-2 ${
+                        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${
                           errors.city
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
+                            ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                            : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
                         }`}
                       />
 
                       {errors.city && (
-                        <p className="mt-2 text-sm text-red-600">
+                        <p className="mt-1.5 text-xs text-red-500">
                           {errors.city.message}
                         </p>
                       )}
                     </div>
                   </div>
                 </div>
+              )}
 
-                <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-5 md:p-6">
+              {/* STEP 3 */}
+              {step === 3 && (
+                <div>
+                  <div className="mb-8">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50">
+                      <FiGift className="h-6 w-6 text-emerald-600" />
+                    </div>
+
+                    <h2 className="text-2xl font-black text-slate-900">
+                      Reunion Package
+                    </h2>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                      Choose your reunion package and T-shirt size.
+                    </p>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Packages */}
+                    <div>
+                      <label className="mb-3 block text-sm font-bold text-slate-700">
+                        Select Package
+                      </label>
+
+                      <div className="space-y-3">
+                        {packages.map((pkg) => {
+                          const selected = selectedPackageId === pkg.packageId;
+
+                          return (
+                            <label
+                              key={pkg.packageId}
+                              className={`block cursor-pointer rounded-2xl border p-5 transition ${
+                                selected
+                                  ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100"
+                                  : "border-slate-200 hover:border-blue-300"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                value={pkg.packageId}
+                                className="sr-only"
+                                {...register("packageId", {
+                                  required: "Please select a package.",
+                                })}
+                              />
+
+                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <div className="flex items-center gap-3">
+                                    <div
+                                      className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                                        selected
+                                          ? "bg-blue-600 text-white"
+                                          : "bg-slate-100 text-slate-500"
+                                      }`}
+                                    >
+                                      <FiGift />
+                                    </div>
+
+                                    <div>
+                                      <h3 className="font-black text-slate-900">
+                                        {pkg.name}
+                                      </h3>
+
+                                      <p className="mt-0.5 text-xs text-slate-500">
+                                        {pkg.description}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {pkg.items?.length > 0 && (
+                                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                      {pkg.items.map((item, index) => (
+                                        <div
+                                          key={`${pkg.packageId}-${index}`}
+                                          className="flex items-center gap-2 text-xs text-slate-600"
+                                        >
+                                          <FiCheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
+
+                                          <span>{item}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="whitespace-nowrap text-sm font-black text-emerald-600">
+                                  {formatPrice(pkg.pricing)}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {errors.packageId && (
+                        <p className="mt-2 text-xs text-red-500">
+                          {errors.packageId.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* T-shirt */}
+                    {selectedPackage?.tshirt?.included && (
+                      <div>
+                        <label
+                          htmlFor="tShirtSize"
+                          className="mb-2 block text-sm font-bold text-slate-700"
+                        >
+                          T-Shirt Size
+                        </label>
+
+                        <div className="relative">
+                          <select
+                            id="tShirtSize"
+                            {...register("tShirtSize", {
+                              required: "Please select your T-shirt size.",
+                            })}
+                            className={`w-full appearance-none rounded-xl border bg-white px-4 py-3 pr-10 text-sm outline-none transition focus:ring-4 ${
+                              errors.tShirtSize
+                                ? "border-red-300 focus:border-red-500 focus:ring-red-50"
+                                : "border-slate-200 focus:border-blue-500 focus:ring-blue-50"
+                            }`}
+                          >
+                            {selectedTshirtSizes.map((size) => (
+                              <option key={size} value={size}>
+                                {size}
+                              </option>
+                            ))}
+                          </select>
+
+                          <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+
+                        {errors.tShirtSize && (
+                          <p className="mt-1.5 text-xs text-red-500">
+                            {errors.tShirtSize.message}
+                          </p>
+                        )}
+
+                        <p className="mt-2 text-xs text-slate-400">
+                          Your selected T-shirt size will be used for reunion
+                          gift distribution.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Gift Summary */}
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+                      <div className="flex items-start gap-3">
+                        <FiGift className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
+
+                        <div>
+                          <h3 className="font-bold text-emerald-900">
+                            Reunion Gifts Included
+                          </h3>
+
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {eventGiftItems.map((item, index) => (
+                              <div
+                                key={index}
+                                className="flex items-center gap-2 text-sm text-emerald-800"
+                              >
+                                <FiCheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+
+                                <span>{item}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4 */}
+              {step === 4 && (
+                <div>
+                  <div className="mb-8">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50">
+                      <FiShield className="h-6 w-6 text-blue-600" />
+                    </div>
+
+                    <h2 className="text-2xl font-black text-slate-900">
+                      Confirm Registration
+                    </h2>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                      Review your information before submitting your
+                      registration.
+                    </p>
+                  </div>
+
+                  <div className="space-y-5">
+                    {/* Personal Summary */}
+                    <div className="rounded-2xl border border-slate-200 p-5">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h3 className="font-black text-slate-900">
+                          Personal Information
+                        </h3>
+
+                        <button
+                          type="button"
+                          onClick={() => setStep(1)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                        >
+                          Edit
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-slate-400">Name</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {getValues("name")}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400">
+                            Participant Type
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold capitalize text-slate-900">
+                            {getValues("studentType")}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400">Email</p>
+
+                          <p className="mt-1 break-all text-sm font-bold text-slate-900">
+                            {getValues("email")}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400">Phone</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {getValues("phone")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* School Summary */}
+                    <div className="rounded-2xl border border-slate-200 p-5">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h3 className="font-black text-slate-900">
+                          School Information
+                        </h3>
+
+                        <button
+                          type="button"
+                          onClick={() => setStep(2)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                        >
+                          Edit
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-slate-400">Class</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            Class {getValues("classLevel")}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400">Batch Year</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {getValues("batchYear")}
+                          </p>
+                        </div>
+
+                        {isSeniorClass && (
+                          <div>
+                            <p className="text-xs text-slate-400">Department</p>
+
+                            <p className="mt-1 text-sm font-bold capitalize text-slate-900">
+                              {getValues("department")}
+                            </p>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="text-xs text-slate-400">District</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {getValues("district")}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400">
+                            City / Upazila
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {getValues("city")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Reunion Summary */}
+                    <div className="rounded-2xl border border-slate-200 p-5">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h3 className="font-black text-slate-900">
+                          Reunion Package
+                        </h3>
+
+                        <button
+                          type="button"
+                          onClick={() => setStep(3)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                        >
+                          Edit
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-slate-400">Package</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {selectedPackage.name}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400">T-Shirt Size</p>
+
+                          <p className="mt-1 text-sm font-bold text-slate-900">
+                            {normalizeTshirtSize(getValues("tShirtSize"))}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Agreement */}
+                    <label
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-5 transition ${
+                        agreeToRules
+                          ? "border-blue-600 bg-blue-50"
+                          : "border-slate-200 hover:border-blue-300"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        {...register("agreeToRules", {
+                          required: "You must agree to the reunion rules.",
+                        })}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">
+                          I agree to the reunion rules and registration
+                          information.
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          I confirm that the information provided above is
+                          accurate and I agree to follow the rules and
+                          instructions of the reunion organizers.
+                        </p>
+
+                        {errors.agreeToRules && (
+                          <p className="mt-2 text-xs font-medium text-red-500">
+                            {errors.agreeToRules.message}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Navigation */}
+              <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                {step > 1 ? (
                   <button
                     type="button"
-                    onClick={handlePreviousStep}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 font-bold text-slate-700 transition hover:bg-slate-50"
+                    onClick={handleBack}
+                    disabled={registrationMutation.isPending}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <FiArrowLeft />
                     Back
                   </button>
-
+                ) : (
                   <button
                     type="button"
-                    onClick={handleNextStep}
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 font-bold text-white transition hover:bg-blue-700"
+                    onClick={() => navigate("/")}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <FiArrowLeft />
+                    Cancel
+                  </button>
+                )}
+
+                {step < 4 ? (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-100 transition hover:bg-blue-700"
                   >
                     Continue
                     <FiArrowRight />
                   </button>
-                </div>
-              </section>
-            )}
-
-            {/* =============================================
-                STEP 3
-            ============================================= */}
-
-            {step === 3 && (
-              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-200 p-6 md:p-8">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
-                      <FiGift className="h-6 w-6 text-emerald-600" />
-                    </div>
-
-                    <div>
-                      <h2 className="text-2xl font-extrabold text-slate-900">
-                        Reunion Package & Confirmation
-                      </h2>
-
-                      <p className="mt-1 text-sm text-slate-500">
-                        Choose your T-shirt size and confirm your registration.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-7 p-6 md:p-8">
-                  {/* Package */}
-
-                  <div>
-                    <label className="mb-3 block text-sm font-bold text-slate-700">
-                      Reunion Package
-                    </label>
-
-                    <div className="grid gap-4">
-                      {packages.map((pkg) => {
-                        const packageId = pkg.packageId || pkg.id;
-
-                        const selected = selectedPackageId === packageId;
-
-                        return (
-                          <label
-                            key={packageId}
-                            className={`cursor-pointer rounded-2xl border p-5 transition ${
-                              selected
-                                ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
-                                : "border-slate-200 hover:border-blue-300"
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              value={packageId}
-                              {...register("packageId", {
-                                required: "Please select a reunion package.",
-                              })}
-                              className="sr-only"
-                            />
-
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex min-w-0 items-start gap-4">
-                                <div
-                                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                                    selected
-                                      ? "bg-blue-600 text-white"
-                                      : "bg-slate-100 text-slate-500"
-                                  }`}
-                                >
-                                  <FiPackage className="h-5 w-5" />
-                                </div>
-
-                                <div className="min-w-0">
-                                  <h3 className="font-extrabold text-slate-900">
-                                    {pkg.name}
-                                  </h3>
-
-                                  <p className="mt-1 text-sm leading-6 text-slate-500">
-                                    {pkg.description}
-                                  </p>
-
-                                  <p className="mt-2 text-sm font-bold text-emerald-600">
-                                    {formatPrice(pkg.pricing)}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div
-                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
-                                  selected
-                                    ? "border-blue-600 bg-blue-600 text-white"
-                                    : "border-slate-300"
-                                }`}
-                              >
-                                {selected && <FiCheck className="h-4 w-4" />}
-                              </div>
-                            </div>
-
-                            {Array.isArray(pkg.items) &&
-                              pkg.items.length > 0 && (
-                                <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                                  {pkg.items.map((item, index) => (
-                                    <div
-                                      key={`${packageId}-${index}`}
-                                      className="flex items-center gap-2 text-sm text-slate-600"
-                                    >
-                                      <FiCheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
-
-                                      <span>{normalizeGiftItem(item)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                          </label>
-                        );
-                      })}
-                    </div>
-
-                    {errors.packageId && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {errors.packageId.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* T-shirt */}
-
-                  <div>
-                    <label
-                      htmlFor="tShirtSize"
-                      className="mb-2 block text-sm font-bold text-slate-700"
-                    >
-                      T-Shirt Size
-                    </label>
-
-                    <div className="relative">
-                      <select
-                        id="tShirtSize"
-                        {...register("tShirtSize", {
-                          required: "T-shirt size is required.",
-                        })}
-                        className={`w-full appearance-none rounded-xl border bg-white px-4 py-3.5 pr-10 outline-none transition focus:ring-2 ${
-                          errors.tShirtSize
-                            ? "border-red-400 focus:ring-red-100"
-                            : "border-slate-300 focus:border-blue-500 focus:ring-blue-100"
-                        }`}
-                      >
-                        {selectedTshirtSizes.map((size) => (
-                          <option key={size} value={size}>
-                            {size}
-                          </option>
-                        ))}
-                      </select>
-
-                      <FiChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                    </div>
-
-                    {errors.tShirtSize && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {errors.tShirtSize.message}
-                      </p>
-                    )}
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Please choose carefully because the T-shirt will be
-                      prepared according to your selected size.
-                    </p>
-                  </div>
-
-                  {/* Event Gifts */}
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm">
-                        <FiGift className="h-5 w-5 text-blue-600" />
-                      </div>
-
-                      <div>
-                        <h3 className="font-extrabold text-slate-900">
-                          Registration Gifts
-                        </h3>
-
-                        <p className="text-xs text-slate-500">
-                          Included with your reunion registration
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      {eventGiftItems.map((item, index) => (
-                        <div
-                          key={`event-gift-${index}`}
-                          className="flex items-start gap-3 rounded-xl bg-white p-3"
-                        >
-                          <FiCheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-
-                          <span className="text-sm font-medium text-slate-700">
-                            {normalizeGiftItem(item)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Consent */}
-
-                  <label
-                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-5 transition ${
-                      agreeToRules
-                        ? "border-emerald-500 bg-emerald-50"
-                        : errors.agreeToRules
-                          ? "border-red-400 bg-red-50"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      {...register("agreeToRules", {
-                        required: "You must agree before registering.",
-                      })}
-                      className="mt-1 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-
-                    <div>
-                      <p className="font-bold text-slate-900">
-                        I confirm my registration
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-slate-600">
-                        I confirm that the information provided above is correct
-                        and I agree to follow the reunion rules and
-                        instructions.
-                      </p>
-                    </div>
-                  </label>
-
-                  {errors.agreeToRules && (
-                    <p className="-mt-4 text-sm text-red-600">
-                      {errors.agreeToRules.message}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-5 md:p-6">
-                  <button
-                    type="button"
-                    onClick={handlePreviousStep}
-                    disabled={registrationMutation.isPending}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <FiArrowLeft />
-                    Back
-                  </button>
-
+                ) : (
                   <button
                     type="submit"
-                    disabled={registrationMutation.isPending}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={registrationMutation.isPending || !agreeToRules}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-100 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {registrationMutation.isPending ? (
                       <>
-                        <FiLoader className="h-5 w-5 animate-spin" />
-                        Registering...
+                        <FiLoader className="h-4 w-4 animate-spin" />
+                        Submitting...
                       </>
                     ) : (
                       <>
@@ -2032,166 +2203,126 @@ const ReunionRegister = () => {
                       </>
                     )}
                   </button>
-                </div>
-              </section>
-            )}
-          </form>
-
-          {/* =================================================
-              SIDEBAR
-          ================================================= */}
-
-          <aside className="space-y-5 lg:sticky lg:top-6 lg:self-start">
-            {/* Event Summary */}
-
-            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <div className="bg-slate-900 p-6 text-white">
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">
-                  Reunion Details
-                </p>
-
-                <h2 className="mt-2 text-xl font-extrabold">
-                  {event.shortTitle || event.title}
-                </h2>
-              </div>
-
-              <div className="space-y-5 p-6">
-                <div className="flex items-start gap-3">
-                  <FiCalendar className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      Date
-                    </p>
-
-                    <p className="mt-1 text-sm font-bold text-slate-800">
-                      {formatEventDate(event.eventDate)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <FiClock className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      Time
-                    </p>
-
-                    <p className="mt-1 text-sm font-bold text-slate-800">
-                      {event.startTime} - {event.endTime}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <FiMapPin className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      Venue
-                    </p>
-
-                    <p className="mt-1 text-sm font-bold leading-6 text-slate-800">
-                      {formatVenue(event.venue)}
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Selected Package */}
+            {/* Sidebar */}
+            <aside className="space-y-5">
+              {/* Event Info */}
+              <div className="rounded-3xl bg-white p-6 shadow-lg">
+                <h3 className="text-lg font-black text-slate-900">
+                  Reunion Information
+                </h3>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100">
-                  <FiPackage className="h-5 w-5 text-blue-600" />
-                </div>
+                <div className="mt-5 space-y-4">
+                  <div className="flex gap-3">
+                    <FiCalendar className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
 
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Selected Package
-                  </p>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Date
+                      </p>
 
-                  <h3 className="mt-1 font-extrabold text-slate-900">
-                    {selectedPackage.name}
-                  </h3>
+                      <p className="mt-1 text-sm font-bold text-slate-900">
+                        {formatEventDate(event.eventDate)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <FiClock className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
+
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Time
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-slate-900">
+                        {event.startTime} - {event.endTime}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <FiMapPin className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
+
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Venue
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold leading-5 text-slate-900">
+                        {formatVenue(event.venue)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <FiGift className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
+
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Registration Package
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-emerald-600">
+                        {formatPrice(selectedPackage?.pricing)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {Array.isArray(selectedPackage.items) &&
-                  selectedPackage.items.map((item, index) => (
-                    <div
-                      key={`selected-package-item-${index}`}
-                      className="flex items-start gap-2"
-                    >
-                      <FiCheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+              {/* Gifts */}
+              <div className="rounded-3xl bg-white p-6 shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50">
+                    <FiGift className="h-5 w-5 text-emerald-600" />
+                  </div>
 
-                      <span className="text-sm text-slate-600">
-                        {normalizeGiftItem(item)}
-                      </span>
+                  <div>
+                    <h3 className="font-black text-slate-900">Reunion Gifts</h3>
+
+                    <p className="text-xs text-slate-500">
+                      Included with registration
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {eventGiftItems.map((item, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <FiCheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-500" />
+
+                      <span className="text-sm text-slate-600">{item}</span>
                     </div>
                   ))}
-              </div>
-
-              <div className="mt-5 border-t border-slate-100 pt-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Package Price</span>
-
-                  <span className="font-extrabold text-emerald-600">
-                    {formatPrice(selectedPackage.pricing)}
-                  </span>
                 </div>
               </div>
-            </div>
 
-            {/* Security */}
-
-            <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-6">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white">
-                  <FiShield className="h-5 w-5 text-emerald-600" />
-                </div>
-
-                <div>
-                  <h3 className="font-extrabold text-slate-900">
-                    Secure Registration
-                  </h3>
-
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Your registration is connected to your authenticated
-                    account. Your personal information is handled securely.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* QR */}
-
-            {event.qrCode?.enabled && (
+              {/* Security */}
               <div className="rounded-3xl border border-blue-100 bg-blue-50 p-6">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white">
-                    <FiCheckCircle className="h-5 w-5 text-blue-600" />
-                  </div>
+                  <FiShield className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
 
                   <div>
-                    <h3 className="font-extrabold text-slate-900">
-                      Attendance QR
+                    <h3 className="font-bold text-blue-900">
+                      Secure Registration
                     </h3>
 
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      A secure QR code will be associated with your registration
-                      for reunion attendance.
+                    <p className="mt-2 text-xs leading-5 text-blue-800">
+                      Your registration is connected to your authenticated
+                      account. Please make sure your information is correct
+                      before submitting.
                     </p>
                   </div>
                 </div>
               </div>
-            )}
-          </aside>
-        </div>
-      </main>
+            </aside>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };
