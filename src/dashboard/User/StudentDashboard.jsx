@@ -1,4 +1,4 @@
-import React from "react";
+import { useEffect, useMemo } from "react";
 import {
   FiArrowRight,
   FiCalendar,
@@ -10,788 +10,1452 @@ import {
   FiGift,
   FiHome,
   FiInfo,
+  FiLoader,
   FiMapPin,
-  FiMessageCircle,
   FiPackage,
   FiPhone,
+  FiShield,
   FiStar,
   FiUser,
   FiUsers,
+  FiXCircle,
 } from "react-icons/fi";
-import { Link } from "react-router-dom";
-
-// If you already have useAuth, uncomment this:
-// import useAuth from "../../hooks/useAuth";
-
-const StudentDashboard = () => {
-  // ----------------------------------------------------------
-  // AUTH USER
-  // ----------------------------------------------------------
-  // Later connect this with your actual useAuth() hook.
-  //
-  // const { user } = useAuth();
-
-  const user = {
-    name: "Omar Faruk",
-    email: "omar@example.com",
-    photoURL: "",
-  };
-
-  // ----------------------------------------------------------
-  // TEMPORARY DASHBOARD DATA
-  // ----------------------------------------------------------
-  // These values should later come from your MongoDB API.
-
-  const registration = {
-    registered: true,
-    status: "Confirmed",
-    registrationId: "SR-2027-00125",
-    batch: "SSC 2012",
-    department: "Science",
-    phone: "+880 1XXXXXXXXX",
-    registeredAt: "12 January 2027",
-  };
-
-  const event = {
-    title: "School Reunion 2027",
-    date: "22 February 2027",
-    day: "Friday",
-    time: "10:00 AM – 5:00 PM",
-    venue: "School Campus",
-    location: "Your School Campus, Bangladesh",
-  };
-
-  const profile = {
-    completed: 82,
-  };
-
-  const giftPackage = {
-    name: "Reunion Premium Gift Package",
-    items: 5,
-    status: "Ready for Collection",
-  };
-
-  const announcements = [
-    {
-      id: 1,
-      title: "Reunion registration has been confirmed",
-      date: "10 February 2027",
-      type: "Registration",
-    },
-    {
-      id: 2,
-      title: "Please bring your registration confirmation",
-      date: "08 February 2027",
-      type: "Important",
-    },
-    {
-      id: 3,
-      title: "Reunion schedule has been updated",
-      date: "05 February 2027",
-      type: "Schedule",
-    },
-  ];
-
-  const schedule = [
-    {
-      time: "10:00 AM",
-      title: "Registration & Welcome",
-      description: "Guest registration and reunion welcome.",
-    },
-    {
-      time: "11:00 AM",
-      title: "Opening Ceremony",
-      description: "Welcome speech and school memories.",
-    },
-    {
-      time: "12:30 PM",
-      title: "Lunch & Networking",
-      description: "Lunch with classmates and alumni.",
-    },
-    {
-      time: "02:30 PM",
-      title: "Cultural Program",
-      description: "Music, performances and memories.",
-    },
-    {
-      time: "04:00 PM",
-      title: "Gift Distribution",
-      description: "Distribution of reunion gifts.",
-    },
-  ];
-
-  // ----------------------------------------------------------
-  // HELPERS
-  // ----------------------------------------------------------
-
-  const getInitials = (name = "") => {
-    return name
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((word) => word[0]?.toUpperCase())
-      .join("");
-  };
-
-  // ----------------------------------------------------------
-  // QUICK ACTIONS
-  // ----------------------------------------------------------
-
-  const quickActions = [
-    {
-      title: "My Profile",
-      description: "Update your personal information",
-      icon: FiUser,
-      link: "/dashboard/student/profile",
-    },
-    {
-      title: "Registration",
-      description: "View your reunion registration",
-      icon: FiCheckCircle,
-      link: "/dashboard/student/registration",
-    },
-    {
-      title: "My Gifts",
-      description: "Check your reunion gift package",
-      icon: FiGift,
-      link: "/dashboard/student/gifts",
-    },
-    {
-      title: "Event Schedule",
-      description: "See the complete reunion schedule",
-      icon: FiCalendar,
-      link: "/dashboard/student/schedule",
-    },
-  ];
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-      {/* ======================================================
-          PAGE CONTAINER
-      ======================================================= */}
-      <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-        {/* ====================================================
-            WELCOME HERO
-        ===================================================== */}
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-700 p-5 text-white shadow-xl sm:p-7 lg:p-9">
-          {/* Decorative background */}
-          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
-          <div className="pointer-events-none absolute -bottom-24 left-1/3 h-72 w-72 rounded-full bg-violet-400/20 blur-3xl" />
-
-          <div className="relative z-10 flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
-            {/* User */}
-            <div className="flex items-center gap-4 sm:gap-5">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/30 bg-white/15 text-xl font-bold shadow-lg backdrop-blur sm:h-20 sm:w-20 sm:text-2xl">
-                {user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  getInitials(user.name)
-                )}
-              </div>
-
-              <div>
-                <p className="mb-1 text-sm font-medium text-indigo-100">
-                  Welcome back 👋
-                </p>
-
-                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                  {user.name}
-                </h1>
-
-                <p className="mt-1 text-sm text-indigo-100">
-                  {registration.batch} • {registration.department}
-                </p>
-              </div>
-            </div>
-
-            {/* Event */}
-            <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur sm:p-5 lg:min-w-[340px]">
-              <div className="mb-3 flex items-center gap-2">
-                <FiStar className="text-amber-300" />
-                <span className="text-sm font-semibold text-indigo-50">
-                  School Reunion 2027
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <FiCalendar />
-                  <span>{event.date}</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <FiClock />
-                  <span>{event.time}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ====================================================
-            STATS
-        ===================================================== */}
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
-          {/* Registration */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500 sm:text-sm">
-                  Registration
-                </p>
-
-                <p className="mt-2 text-lg font-bold text-slate-900 sm:text-xl">
-                  {registration.status}
-                </p>
-              </div>
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <FiCheckCircle size={20} />
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs text-slate-500">
-              ID: {registration.registrationId}
-            </p>
-          </div>
-
-          {/* Profile */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500 sm:text-sm">
-                  Profile
-                </p>
-
-                <p className="mt-2 text-lg font-bold text-slate-900 sm:text-xl">
-                  {profile.completed}%
-                </p>
-              </div>
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <FiUser size={20} />
-              </div>
-            </div>
-
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-blue-600 transition-all"
-                style={{ width: `${profile.completed}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Gift */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500 sm:text-sm">
-                  Gift Package
-                </p>
-
-                <p className="mt-2 text-lg font-bold text-slate-900 sm:text-xl">
-                  {giftPackage.items} Items
-                </p>
-              </div>
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <FiGift size={20} />
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs text-emerald-600">
-              {giftPackage.status}
-            </p>
-          </div>
-
-          {/* Attendance */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500 sm:text-sm">
-                  Attendance
-                </p>
-
-                <p className="mt-2 text-lg font-bold text-slate-900 sm:text-xl">
-                  Pending
-                </p>
-              </div>
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                <FiUsers size={20} />
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs text-slate-500">
-              Check-in available on event day
-            </p>
-          </div>
-        </section>
-
-        {/* ====================================================
-            MAIN GRID
-        ===================================================== */}
-        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          {/* ==================================================
-              LEFT CONTENT
-          =================================================== */}
-          <div className="space-y-6">
-            {/* -----------------------------------------------
-                REGISTRATION CARD
-            ------------------------------------------------ */}
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
-                    My Reunion Registration
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Your registration information for the reunion.
-                  </p>
-                </div>
-
-                <span className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  {registration.status}
-                </span>
-              </div>
-
-              <div className="grid gap-0 sm:grid-cols-2">
-                <InfoItem icon={FiUser} label="Participant" value={user.name} />
-
-                <InfoItem
-                  icon={FiUsers}
-                  label="Batch"
-                  value={registration.batch}
-                />
-
-                <InfoItem
-                  icon={FiStar}
-                  label="Department"
-                  value={registration.department}
-                />
-
-                <InfoItem
-                  icon={FiPhone}
-                  label="Phone"
-                  value={registration.phone}
-                />
-
-                <InfoItem
-                  icon={FiCheckCircle}
-                  label="Registration ID"
-                  value={registration.registrationId}
-                />
-
-                <InfoItem
-                  icon={FiCalendar}
-                  label="Registered On"
-                  value={registration.registeredAt}
-                />
-              </div>
-
-              <div className="flex flex-col gap-3 border-t border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-end sm:p-6">
-                <Link
-                  to="/dashboard/student/registration"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
-                >
-                  View Registration
-                  <FiArrowRight />
-                </Link>
-
-                <Link
-                  to="/dashboard/student/profile"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
-                >
-                  <FiEdit3 />
-                  Edit Profile
-                </Link>
-              </div>
-            </div>
-
-            {/* -----------------------------------------------
-                EVENT INFORMATION
-            ------------------------------------------------ */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                      <FiCalendar size={20} />
-                    </span>
-
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-900">
-                        Reunion Information
-                      </h2>
-
-                      <p className="text-sm text-slate-500">
-                        Important event details
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <span className="w-fit rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
-                  {event.day}
-                </span>
-              </div>
-
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <EventInfo icon={FiCalendar} title="Date" value={event.date} />
-
-                <EventInfo icon={FiClock} title="Time" value={event.time} />
-
-                <EventInfo icon={FiMapPin} title="Venue" value={event.venue} />
-              </div>
-
-              <div className="mt-5 rounded-xl bg-slate-50 p-4">
-                <div className="flex gap-3">
-                  <FiInfo className="mt-0.5 shrink-0 text-indigo-600" />
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">
-                      Important reminder
-                    </p>
-
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                      Please arrive at least 30 minutes before the program
-                      starts and keep your registration ID available for
-                      check-in.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* -----------------------------------------------
-                EVENT SCHEDULE
-            ------------------------------------------------ */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Event Schedule
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    A quick look at reunion activities.
-                  </p>
-                </div>
-
-                <Link
-                  to="/dashboard/student/schedule"
-                  className="hidden items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700 sm:flex"
-                >
-                  View all
-                  <FiChevronRight />
-                </Link>
-              </div>
-
-              <div className="mt-6 space-y-0">
-                {schedule.map((item, index) => (
-                  <div
-                    key={`${item.time}-${index}`}
-                    className="relative flex gap-4 pb-6 last:pb-0"
-                  >
-                    {/* Timeline */}
-                    <div className="flex w-20 shrink-0 flex-col items-center">
-                      <span className="text-xs font-bold text-indigo-600 sm:text-sm">
-                        {item.time}
-                      </span>
-
-                      {index !== schedule.length - 1 && (
-                        <span className="mt-2 h-full w-px bg-slate-200" />
-                      )}
-                    </div>
-
-                    {/* Dot */}
-                    <div className="absolute left-[79px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-indigo-600 shadow sm:left-[80px]" />
-
-                    {/* Content */}
-                    <div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-slate-50 p-3.5 sm:p-4">
-                      <h3 className="text-sm font-bold text-slate-900 sm:text-base">
-                        {item.title}
-                      </h3>
-
-                      <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Link
-                to="/dashboard/student/schedule"
-                className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:hidden"
-              >
-                View Complete Schedule
-                <FiArrowRight />
-              </Link>
-            </div>
-          </div>
-
-          {/* ==================================================
-              RIGHT SIDEBAR
-          =================================================== */}
-          <aside className="space-y-6">
-            {/* -----------------------------------------------
-                PROFILE COMPLETION
-            ------------------------------------------------ */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-bold text-slate-900">
-                    Profile Completion
-                  </h2>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Complete your profile
-                  </p>
-                </div>
-
-                <span className="text-lg font-bold text-indigo-600">
-                  {profile.completed}%
-                </span>
-              </div>
-
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-indigo-600"
-                  style={{
-                    width: `${profile.completed}%`,
-                  }}
-                />
-              </div>
-
-              <p className="mt-3 text-xs leading-5 text-slate-500">
-                Add your remaining information so your classmates can recognize
-                you easily.
-              </p>
-
-              <Link
-                to="/dashboard/student/profile"
-                className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-              >
-                Complete Profile
-                <FiArrowRight />
-              </Link>
-            </div>
-
-            {/* -----------------------------------------------
-                GIFT PACKAGE
-            ------------------------------------------------ */}
-            <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 p-5 shadow-sm ring-1 ring-amber-100 sm:p-6">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm">
-                <FiGift size={22} />
-              </div>
-
-              <h2 className="mt-4 text-lg font-bold text-slate-900">
-                Your Reunion Gift
-              </h2>
-
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Your registration includes a special reunion gift package
-                prepared by the reunion committee.
-              </p>
-
-              <div className="mt-4 rounded-xl bg-white/80 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-slate-600">
-                    Package
-                  </span>
-
-                  <span className="text-right text-sm font-bold text-slate-900">
-                    {giftPackage.name}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Items</span>
-
-                  <span className="text-sm font-bold text-slate-900">
-                    {giftPackage.items}
-                  </span>
-                </div>
-              </div>
-
-              <Link
-                to="/dashboard/student/gifts"
-                className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-              >
-                <FiPackage />
-                View Gift Package
-              </Link>
-            </div>
-
-            {/* -----------------------------------------------
-                ANNOUNCEMENTS
-            ------------------------------------------------ */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-bold text-slate-900">Announcements</h2>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Latest reunion updates
-                  </p>
-                </div>
-
-                <FiMessageCircle className="text-indigo-600" />
-              </div>
-
-              <div className="mt-5 space-y-4">
-                {announcements.map((announcement) => (
-                  <div
-                    key={announcement.id}
-                    className="border-b border-slate-100 pb-4 last:border-0 last:pb-0"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                        <FiInfo size={15} />
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold leading-5 text-slate-800">
-                          {announcement.title}
-                        </p>
-
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] text-slate-400">
-                            {announcement.date}
-                          </span>
-
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                            {announcement.type}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </aside>
-        </section>
-
-        {/* ====================================================
-            QUICK ACTIONS
-        ===================================================== */}
-        <section className="mt-6">
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
-              Quick Actions
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Quickly access your reunion activities.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
-
-              return (
-                <Link
-                  key={action.title}
-                  to={action.link}
-                  className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md sm:p-5"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white">
-                      <Icon size={21} />
-                    </div>
-
-                    <FiArrowRight className="text-slate-300 transition group-hover:translate-x-1 group-hover:text-indigo-600" />
-                  </div>
-
-                  <h3 className="mt-4 font-bold text-slate-900">
-                    {action.title}
-                  </h3>
-
-                  <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-                    {action.description}
-                  </p>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* ====================================================
-            FOOTER NOTE
-        ===================================================== */}
-        <section className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm">
-                <FiHome />
-              </div>
-
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 sm:text-base">
-                  Keep the memories alive
-                </h3>
-
-                <p className="mt-1 text-xs leading-5 text-slate-600 sm:text-sm">
-                  Stay connected with your school friends and alumni community.
-                </p>
-              </div>
-            </div>
-
-            <Link
-              to="/gallery"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-600 hover:text-white"
-            >
-              <FiCamera />
-              Reunion Gallery
-            </Link>
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "react-router-dom";
+import useAuth from "../../hooks/useAuth";
+import axiosSecure  from "../../hooks/axiosSecure";
+import toast from "react-hot-toast";
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const formatStudentType = (value) => {
+  if (value === "alumni") return "Alumni";
+  if (value === "current") return "Current Student";
+  return "—";
 };
 
-// ============================================================
-// REUSABLE COMPONENTS
-// ============================================================
+const formatDepartment = (value) => {
+  if (!value) return "—";
+
+  return String(value)
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const formatStatus = (value) => {
+  if (!value) return "—";
+
+  return String(value)
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const formatDate = (value) => {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const formatEventDate = (value) => {
+  if (!value) return "—";
+
+  /*
+   * Adding T00:00:00 prevents the YYYY-MM-DD value
+   * from shifting to the previous day in some timezones.
+   */
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+};
+
+const formatTime = (value) => {
+  if (!value) return "—";
+
+  const [hourString, minuteString] = String(value).split(":");
+
+  const hour = Number(hourString);
+  const minute = Number(minuteString);
+
+  if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    return value;
+  }
+
+  const date = new Date();
+
+  date.setHours(hour, minute, 0, 0);
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const getInitials = (name) => {
+  if (!name) return "SR";
+
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const formatVenue = (venue) => {
+  if (!venue) return "School Campus";
+
+  return [venue.name, venue.address, venue.city, venue.country]
+    .filter(Boolean)
+    .join(", ");
+};
+
+const getAttendanceLabel = (status) => {
+  if (status === "checked-in") {
+    return "Checked In";
+  }
+
+  if (status === "not-checked-in") {
+    return "Pending";
+  }
+
+  return formatStatus(status);
+};
+
+const getAttendanceColor = (status) => {
+  if (status === "checked-in") {
+    return "emerald";
+  }
+
+  if (status === "not-checked-in") {
+    return "amber";
+  }
+
+  return "slate";
+};
+
+/* =========================================================
+   SMALL UI COMPONENTS
+========================================================= */
 
 const InfoItem = ({ icon: Icon, label, value }) => {
   return (
-    <div className="flex items-start gap-3 border-b border-slate-100 p-5 last:border-b-0 sm:p-6">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-600">
-        <Icon size={17} />
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+        <Icon className="h-4 w-4" />
       </div>
 
       <div className="min-w-0">
-        <p className="text-xs font-medium text-slate-400">{label}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          {label}
+        </p>
 
-        <p className="mt-1 truncate text-sm font-semibold text-slate-800">
-          {value}
+        <p className="mt-1 break-words text-sm font-semibold text-slate-800">
+          {value || "—"}
         </p>
       </div>
     </div>
   );
 };
 
-const EventInfo = ({ icon: Icon, title, value }) => {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-      <div className="flex items-center gap-2 text-indigo-600">
-        <Icon size={17} />
+const StatusBadge = ({ status }) => {
+  const normalized = String(status || "").toLowerCase();
 
-        <span className="text-xs font-semibold">{title}</span>
+  let classes = "bg-slate-100 text-slate-600";
+
+  let Icon = FiInfo;
+
+  if (
+    normalized === "confirmed" ||
+    normalized === "checked-in" ||
+    normalized === "active" ||
+    normalized === "not-required"
+  ) {
+    classes = "bg-emerald-50 text-emerald-700";
+    Icon = FiCheckCircle;
+  }
+
+  if (
+    normalized === "pending" ||
+    normalized === "pending-payment" ||
+    normalized === "not-checked-in"
+  ) {
+    classes = "bg-amber-50 text-amber-700";
+    Icon = FiClock;
+  }
+
+  if (normalized === "cancelled" || normalized === "cancelled") {
+    classes = "bg-red-50 text-red-700";
+    Icon = FiXCircle;
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${classes}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+
+      {formatStatus(status)}
+    </span>
+  );
+};
+
+const QuickAction = ({ to, icon: Icon, title, description }) => {
+  return (
+    <Link
+      to={to}
+      className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+    >
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition group-hover:bg-slate-900 group-hover:text-white">
+        <Icon className="h-5 w-5" />
       </div>
 
-      <p className="mt-2 text-sm font-bold leading-5 text-slate-800">{value}</p>
+      <div className="min-w-0 flex-1">
+        <h4 className="text-sm font-bold text-slate-800">{title}</h4>
+
+        <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+      </div>
+
+      <FiChevronRight className="h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-1 group-hover:text-slate-600" />
+    </Link>
+  );
+};
+
+/* =========================================================
+   MAIN COMPONENT
+========================================================= */
+
+const StudentDashboard = () => {
+  const navigate = useNavigate();
+
+  const { user, loading: authLoading } = useAuth();
+
+  /* =======================================================
+     AUTH REDIRECT
+  ======================================================= */
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      toast.error("Please login to access your dashboard.");
+
+      navigate("/login", {
+        replace: true,
+        state: {
+          from: "/dashboard/student",
+        },
+      });
+    }
+  }, [authLoading, user, navigate]);
+
+  /* =======================================================
+     MY REGISTRATION
+  ======================================================= */
+
+  const {
+    data: registrationResponse,
+    isLoading: registrationLoading,
+    isError: registrationError,
+    error: registrationQueryError,
+    refetch: refetchRegistration,
+  } = useQuery({
+    queryKey: ["my-reunion-registration", user?.uid],
+
+    queryFn: async () => {
+      const response = await axiosSecure.get("/registrations/my-registration");
+
+      return response.data;
+    },
+
+    enabled: !authLoading && Boolean(user),
+
+    retry: 1,
+
+    staleTime: 30 * 1000,
+  });
+
+  /* =======================================================
+     FALLBACK EVENT QUERY
+     
+     Useful if the backend is running an older version
+     of /my-registration.
+  ======================================================= */
+
+  const { data: eventResponse, isLoading: eventLoading } = useQuery({
+    queryKey: ["reunion-registration-event"],
+
+    queryFn: async () => {
+      const response = await axiosSecure.get("/registrations");
+
+      return response.data;
+    },
+
+    enabled: !authLoading && Boolean(user),
+
+    retry: 1,
+
+    staleTime: 60 * 1000,
+  });
+
+  /* =======================================================
+     API DATA
+  ======================================================= */
+
+  const registration = registrationResponse?.data || null;
+
+  const event = registrationResponse?.event || eventResponse?.data || null;
+
+  const giftPackage = registrationResponse?.giftPackage || null;
+
+  const registrationNotFound =
+    registrationError && registrationQueryError?.response?.status === 404;
+
+  /* =======================================================
+     DERIVED DATA
+  ======================================================= */
+
+  const participant = registration?.participant || {};
+
+  const schoolInfo = registration?.schoolInfo || {};
+
+  const reunionInfo = registration?.reunion || {};
+
+  const attendance = registration?.attendance || {};
+
+  const qrCode = registration?.qrCode || {};
+
+  const displayName = participant.name || user?.displayName || "Student";
+
+  const email = participant.email || user?.email || "—";
+
+  const photoURL = user?.photoURL || "";
+
+  const eventTitle =
+    event?.title || reunionInfo.eventTitle || "Grand School Reunion 2027";
+
+  const eventDate = event?.eventDate || null;
+
+  const eventWeekday = event?.weekday || null;
+
+  const eventStartTime = event?.startTime || "09:00";
+
+  const eventEndTime = event?.endTime || "17:00";
+
+  const eventVenue = formatVenue(event?.venue);
+
+  /* =======================================================
+     PROFILE COMPLETION
+  ======================================================= */
+
+  const profileCompletion = useMemo(() => {
+    if (!registration) {
+      return 0;
+    }
+
+    const requiresDepartment = ["9", "10"].includes(
+      String(schoolInfo.classLevel || ""),
+    );
+
+    const fields = [
+      participant.name,
+      participant.email,
+      participant.phone,
+      participant.district,
+      participant.city,
+      schoolInfo.studentType,
+      schoolInfo.classLevel,
+      schoolInfo.batchYear,
+      requiresDepartment ? schoolInfo.department : true,
+    ];
+
+    const completed = fields.filter(
+      (value) => value !== null && value !== undefined && value !== "",
+    ).length;
+
+    return Math.round((completed / fields.length) * 100);
+  }, [
+    registration,
+    participant.name,
+    participant.email,
+    participant.phone,
+    participant.district,
+    participant.city,
+    schoolInfo.studentType,
+    schoolInfo.classLevel,
+    schoolInfo.batchYear,
+    schoolInfo.department,
+  ]);
+
+  /* =======================================================
+     GIFT ITEMS
+  ======================================================= */
+
+  const giftItems = useMemo(() => {
+    if (Array.isArray(giftPackage?.items) && giftPackage.items.length > 0) {
+      return giftPackage.items;
+    }
+
+    if (Array.isArray(giftPackage?.gifts) && giftPackage.gifts.length > 0) {
+      return giftPackage.gifts;
+    }
+
+    if (Array.isArray(event?.gifts?.items)) {
+      return event.gifts.items;
+    }
+
+    return [];
+  }, [giftPackage, event]);
+
+  /* =======================================================
+     SCHEDULE
+     
+     We intentionally don't create fake schedule data.
+     The schedule page can load the real schedule when
+     that API is available.
+  ======================================================= */
+
+  const scheduleItems = Array.isArray(event?.schedule) ? event.schedule : [];
+
+  /* =======================================================
+     LOADING
+  ======================================================= */
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <FiLoader className="h-8 w-8 animate-spin text-slate-700" />
+
+          <p className="text-sm font-medium text-slate-500">
+            Loading your account...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-4">
+        <div className="text-center">
+          <FiLoader className="mx-auto h-7 w-7 animate-spin text-slate-700" />
+
+          <p className="mt-3 text-sm text-slate-500">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
+
+  /* =======================================================
+     REGISTRATION LOADING
+  ======================================================= */
+
+  if (registrationLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <div className="animate-pulse">
+            <div className="h-8 w-64 rounded-lg bg-slate-200" />
+
+            <div className="mt-3 h-4 w-96 max-w-full rounded bg-slate-200" />
+
+            <div className="mt-8 grid gap-6 lg:grid-cols-3">
+              <div className="h-64 rounded-3xl bg-slate-200 lg:col-span-2" />
+              <div className="h-64 rounded-3xl bg-slate-200" />
+            </div>
+
+            <div className="mt-6 h-72 rounded-3xl bg-slate-200" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =======================================================
+     NO REGISTRATION
+  ======================================================= */
+
+  if (registrationNotFound || !registration) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 bg-slate-900 px-6 py-10 text-white sm:px-10">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
+                <FiCalendar className="h-7 w-7" />
+              </div>
+
+              <p className="mt-6 text-sm font-semibold text-slate-300">
+                Student Dashboard
+              </p>
+
+              <h1 className="mt-2 text-2xl font-black sm:text-3xl">
+                Welcome, {displayName}
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                Your account is ready, but we could not find a reunion
+                registration associated with this account.
+              </p>
+            </div>
+
+            <div className="p-6 sm:p-10">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                <div className="flex gap-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                    <FiInfo className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <h2 className="font-bold text-amber-900">
+                      You are not registered yet
+                    </h2>
+
+                    <p className="mt-1 text-sm leading-6 text-amber-800">
+                      Register for the reunion to receive your participant
+                      information, gift package and attendance QR status here.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {event && (
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <InfoItem
+                    icon={FiCalendar}
+                    label="Event"
+                    value={eventTitle}
+                  />
+
+                  <InfoItem
+                    icon={FiClock}
+                    label="Date & Time"
+                    value={`${formatEventDate(eventDate)} • ${formatTime(
+                      eventStartTime,
+                    )}–${formatTime(eventEndTime)}`}
+                  />
+
+                  <InfoItem icon={FiMapPin} label="Venue" value={eventVenue} />
+
+                  <InfoItem
+                    icon={FiUsers}
+                    label="Edition"
+                    value={event?.edition || "76 Years Celebration"}
+                  />
+                </div>
+              )}
+
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  to="/reunion-register"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-slate-800"
+                >
+                  Register for Reunion
+                  <FiArrowRight className="h-4 w-4" />
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => refetchRegistration()}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Check Again
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =======================================================
+     API ERROR
+  ======================================================= */
+
+  if (registrationError && !registrationNotFound) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+          <div className="rounded-3xl border border-red-200 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+              <FiXCircle className="h-7 w-7" />
+            </div>
+
+            <h1 className="mt-5 text-xl font-black text-slate-900">
+              Unable to load your dashboard
+            </h1>
+
+            <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-500">
+              Something went wrong while loading your reunion registration.
+              Please try again.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => refetchRegistration()}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
+            >
+              Try Again
+              <FiArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =======================================================
+     MAIN DASHBOARD
+  ======================================================= */
+
+  const attendanceStatus = attendance.status || "not-checked-in";
+
+  const attendanceColor = getAttendanceColor(attendanceStatus);
+
+  const paymentStatus = registration.paymentStatus || "not-required";
+
+  const registrationStatus = registration.status || "confirmed";
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* ===================================================
+          PAGE HEADER
+      =================================================== */}
+
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-4">
+              {photoURL ? (
+                <img
+                  src={photoURL}
+                  alt={displayName}
+                  className="h-14 w-14 rounded-2xl object-cover ring-4 ring-slate-100"
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white ring-4 ring-slate-100">
+                  {getInitials(displayName)}
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
+                  Student Dashboard
+                </p>
+
+                <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                  Welcome, {displayName}
+                </h1>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Manage your reunion registration and participant information.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <StatusBadge status={registrationStatus} />
+
+              <Link
+                to="/dashboard/student/profile"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                <FiEdit3 className="h-4 w-4" />
+                Edit Profile
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===================================================
+          MAIN CONTENT
+      =================================================== */}
+
+      <main className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
+        {/* =================================================
+            EVENT HERO
+        ================================================= */}
+
+        <section className="overflow-hidden rounded-3xl bg-slate-900 shadow-xl">
+          <div className="relative">
+            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/5 blur-2xl" />
+
+            <div className="absolute -bottom-24 -left-20 h-72 w-72 rounded-full bg-white/5 blur-3xl" />
+
+            <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:p-10">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200">
+                  <FiStar className="h-3.5 w-3.5" />
+
+                  {event?.edition || "76 Years Celebration"}
+                </div>
+
+                <h2 className="mt-5 max-w-3xl text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
+                  {eventTitle}
+                </h2>
+
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+                  Your reunion registration is confirmed. Keep your registration
+                  ID safe and bring your attendance QR code on reunion day.
+                </p>
+
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Registration ID
+                    </p>
+
+                    <p className="mt-1 font-mono text-sm font-bold text-white">
+                      {registration.registrationId}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Status
+                    </p>
+
+                    <p className="mt-1 text-sm font-bold text-emerald-300">
+                      {formatStatus(registrationStatus)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-end lg:justify-end">
+                <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-5 lg:w-72">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                      <FiCalendar className="h-5 w-5" />
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-semibold text-slate-400">
+                        Reunion Date
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-white">
+                        {formatEventDate(eventDate)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                      <FiClock className="h-5 w-5" />
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-semibold text-slate-400">
+                        Event Time
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-white">
+                        {eventWeekday ? `${eventWeekday}, ` : ""}
+                        {formatTime(eventStartTime)} –{" "}
+                        {formatTime(eventEndTime)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                      <FiMapPin className="h-5 w-5" />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-400">
+                        Venue
+                      </p>
+
+                      <p className="mt-1 break-words text-sm font-bold text-white">
+                        {eventVenue}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* =================================================
+            STAT CARDS
+        ================================================= */}
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {/* Registration */}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <FiCheckCircle className="h-5 w-5" />
+              </div>
+
+              <StatusBadge status={registrationStatus} />
+            </div>
+
+            <p className="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              Registration
+            </p>
+
+            <p className="mt-1 text-xl font-black text-slate-900">
+              {formatStatus(registrationStatus)}
+            </p>
+          </div>
+
+          {/* Attendance */}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div
+                className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                  attendanceColor === "emerald"
+                    ? "bg-emerald-50 text-emerald-600"
+                    : "bg-amber-50 text-amber-600"
+                }`}
+              >
+                <FiShield className="h-5 w-5" />
+              </div>
+
+              <StatusBadge status={attendanceStatus} />
+            </div>
+
+            <p className="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              Attendance
+            </p>
+
+            <p className="mt-1 text-xl font-black text-slate-900">
+              {getAttendanceLabel(attendanceStatus)}
+            </p>
+          </div>
+
+          {/* Gift */}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                <FiGift className="h-5 w-5" />
+              </div>
+
+              <span className="rounded-full bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700">
+                Included
+              </span>
+            </div>
+
+            <p className="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              Gift Package
+            </p>
+
+            <p className="mt-1 truncate text-xl font-black text-slate-900">
+              {reunionInfo.packageName ||
+                giftPackage?.name ||
+                "General Reunion Package"}
+            </p>
+          </div>
+
+          {/* Profile */}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <FiUser className="h-5 w-5" />
+              </div>
+
+              <span className="text-sm font-black text-slate-900">
+                {profileCompletion}%
+              </span>
+            </div>
+
+            <p className="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              Profile
+            </p>
+
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-slate-900 transition-all"
+                style={{
+                  width: `${profileCompletion}%`,
+                }}
+              />
+            </div>
+
+            <p className="mt-2 text-xs text-slate-500">
+              Registration information completed
+            </p>
+          </div>
+        </section>
+
+        {/* =================================================
+            TWO COLUMN CONTENT
+        ================================================= */}
+
+        <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+          {/* ===============================================
+              PARTICIPANT INFORMATION
+          =============================================== */}
+
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Participant
+                </p>
+
+                <h3 className="mt-1 text-xl font-black text-slate-900">
+                  Registration Information
+                </h3>
+              </div>
+
+              <Link
+                to="/dashboard/student/profile"
+                className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 sm:self-auto"
+              >
+                <FiEdit3 className="h-4 w-4" />
+                Edit
+              </Link>
+            </div>
+
+            <div className="grid gap-6 p-6 sm:grid-cols-2">
+              <InfoItem
+                icon={FiUser}
+                label="Full Name"
+                value={participant.name}
+              />
+
+              <InfoItem
+                icon={FiUsers}
+                label="Student Type"
+                value={formatStudentType(schoolInfo.studentType)}
+              />
+
+              <InfoItem
+                icon={FiUser}
+                label="Class"
+                value={
+                  schoolInfo.classLevel ? `Class ${schoolInfo.classLevel}` : "—"
+                }
+              />
+
+              <InfoItem
+                icon={FiCalendar}
+                label="Batch Year"
+                value={
+                  schoolInfo.batchYear ? `SSC ${schoolInfo.batchYear}` : "—"
+                }
+              />
+
+              <InfoItem
+                icon={FiStar}
+                label="Department"
+                value={formatDepartment(schoolInfo.department)}
+              />
+
+              <InfoItem
+                icon={FiPhone}
+                label="Phone"
+                value={participant.phone}
+              />
+
+              <InfoItem
+                icon={FiMapPin}
+                label="District"
+                value={participant.district}
+              />
+
+              <InfoItem icon={FiHome} label="City" value={participant.city} />
+
+              <div className="sm:col-span-2">
+                <InfoItem icon={FiUser} label="Email" value={email} />
+              </div>
+            </div>
+          </div>
+
+          {/* ===============================================
+              REGISTRATION SUMMARY
+          =============================================== */}
+
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 p-6">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Reunion
+              </p>
+
+              <h3 className="mt-1 text-xl font-black text-slate-900">
+                Registration Summary
+              </h3>
+            </div>
+
+            <div className="space-y-5 p-6">
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Registration ID
+                </p>
+
+                <p className="mt-2 break-all font-mono text-sm font-black text-slate-900">
+                  {registration.registrationId}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                <div>
+                  <p className="text-xs text-slate-400">Registered On</p>
+
+                  <p className="mt-1 text-sm font-bold text-slate-800">
+                    {formatDateTime(registration.createdAt)}
+                  </p>
+                </div>
+
+                <FiCalendar className="h-5 w-5 text-slate-300" />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                <div>
+                  <p className="text-xs text-slate-400">Payment</p>
+
+                  <p className="mt-1 text-sm font-bold text-slate-800">
+                    {formatStatus(paymentStatus)}
+                  </p>
+                </div>
+
+                <StatusBadge status={paymentStatus} />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs text-slate-400">T-Shirt Size</p>
+
+                  <p className="mt-1 text-sm font-bold text-slate-800">
+                    {reunionInfo.tShirt?.size || "—"}
+                  </p>
+                </div>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-700">
+                  {reunionInfo.tShirt?.size || "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* =================================================
+            GIFT PACKAGE
+        ================================================= */}
+
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-slate-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Reunion Benefits
+              </p>
+
+              <h3 className="mt-1 text-xl font-black text-slate-900">
+                Your Gift Package
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {reunionInfo.packageName ||
+                  giftPackage?.name ||
+                  "General Reunion Package"}
+              </p>
+            </div>
+
+            <Link
+              to="/dashboard/student/gifts"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              View Gift Details
+              <FiArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="p-6">
+            {giftItems.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {giftItems.map((item, index) => (
+                  <div
+                    key={`${item}-${index}`}
+                    className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm">
+                      <FiPackage className="h-4 w-4" />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800">
+                        {typeof item === "string"
+                          ? item
+                          : item?.name || item?.title || "Gift Item"}
+                      </p>
+
+                      <p className="mt-0.5 text-xs text-emerald-600">
+                        Included
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center">
+                <FiGift className="mx-auto h-7 w-7 text-slate-300" />
+
+                <p className="mt-3 text-sm font-bold text-slate-700">
+                  Gift package information
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Your gift package details will appear here.
+                </p>
+              </div>
+            )}
+
+            {reunionInfo.tShirt?.size && (
+              <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                    <FiPackage className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Official Reunion T-Shirt
+                    </p>
+
+                    <p className="mt-1 text-sm font-black text-slate-800">
+                      Size {reunionInfo.tShirt.size}
+                    </p>
+                  </div>
+                </div>
+
+                <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                  Selected
+                </span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* =================================================
+            ATTENDANCE
+        ================================================= */}
+
+        <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+          {/* QR STATUS */}
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Attendance
+                </p>
+
+                <h3 className="mt-1 text-xl font-black text-slate-900">
+                  Attendance QR
+                </h3>
+              </div>
+
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white">
+                <FiShield className="h-5 w-5" />
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                  {qrCode.enabled !== false && qrCode.status === "active" ? (
+                    <FiCheckCircle className="h-7 w-7 text-emerald-600" />
+                  ) : (
+                    <FiXCircle className="h-7 w-7 text-slate-400" />
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm font-black text-slate-900">
+                    {qrCode.enabled !== false && qrCode.status === "active"
+                      ? "QR Code Ready"
+                      : "QR Code Unavailable"}
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Your attendance QR is securely generated for reunion
+                    check-in.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-900 p-5 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-400">Current Attendance</p>
+
+                  <p className="mt-1 text-lg font-black">
+                    {getAttendanceLabel(attendanceStatus)}
+                  </p>
+                </div>
+
+                <FiShield className="h-6 w-6 text-slate-400" />
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs leading-5 text-slate-400">
+              For security, the QR token itself is not displayed in your
+              dashboard.
+            </p>
+          </div>
+
+          {/* EVENT DETAILS */}
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Event Information
+                </p>
+
+                <h3 className="mt-1 text-xl font-black text-slate-900">
+                  Reunion Day
+                </h3>
+              </div>
+
+              <FiCalendar className="h-6 w-6 text-slate-300" />
+            </div>
+
+            <div className="mt-6 grid gap-5 sm:grid-cols-2">
+              <InfoItem
+                icon={FiCalendar}
+                label="Date"
+                value={formatEventDate(eventDate)}
+              />
+
+              <InfoItem
+                icon={FiClock}
+                label="Time"
+                value={`${formatTime(eventStartTime)} – ${formatTime(
+                  eventEndTime,
+                )}`}
+              />
+
+              <InfoItem icon={FiMapPin} label="Venue" value={eventVenue} />
+
+              <InfoItem
+                icon={FiUsers}
+                label="Edition"
+                value={event?.edition || "76 Years Celebration"}
+              />
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="flex gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm">
+                  <FiInfo className="h-5 w-5" />
+                </div>
+
+                <div>
+                  <p className="text-sm font-bold text-slate-800">
+                    Please arrive on time
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Keep your registration information and attendance QR ready
+                    when you arrive at the school campus.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* =================================================
+            QUICK ACTIONS
+        ================================================= */}
+
+        <section className="mt-6">
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Dashboard
+            </p>
+
+            <h3 className="mt-1 text-xl font-black text-slate-900">
+              Quick Actions
+            </h3>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <QuickAction
+              to="/dashboard/student/profile"
+              icon={FiUser}
+              title="My Profile"
+              description="View and manage your participant information."
+            />
+
+            <QuickAction
+              to="/dashboard/student/registration"
+              icon={FiCheckCircle}
+              title="Registration"
+              description="View your reunion registration details."
+            />
+
+            <QuickAction
+              to="/dashboard/student/gifts"
+              icon={FiGift}
+              title="My Gifts"
+              description="Check your included reunion gift package."
+            />
+
+            <QuickAction
+              to="/dashboard/student/schedule"
+              icon={FiCalendar}
+              title="Event Schedule"
+              description="View the latest reunion program and schedule."
+            />
+          </div>
+        </section>
+
+        {/* =================================================
+            SCHEDULE PREVIEW
+        ================================================= */}
+
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Program
+              </p>
+
+              <h3 className="mt-1 text-xl font-black text-slate-900">
+                Event Schedule
+              </h3>
+            </div>
+
+            <Link
+              to="/dashboard/student/schedule"
+              className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 sm:self-auto"
+            >
+              View Full Schedule
+              <FiArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="p-6">
+            {scheduleItems.length > 0 ? (
+              <div className="space-y-3">
+                {scheduleItems.slice(0, 5).map((item, index) => (
+                  <div
+                    key={item?._id || item?.id || index}
+                    className="flex gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                  >
+                    <div className="min-w-20 text-sm font-black text-slate-700">
+                      {item?.startTime || item?.time || "—"}
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">
+                        {item?.title || item?.name || "Program"}
+                      </p>
+
+                      {item?.description && (
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 p-7 text-center">
+                <FiCalendar className="mx-auto h-8 w-8 text-slate-300" />
+
+                <h4 className="mt-3 text-sm font-black text-slate-700">
+                  Schedule will be published here
+                </h4>
+
+                <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-slate-500">
+                  The reunion schedule is not included in the event response
+                  yet. Check the schedule page for the latest published program.
+                </p>
+
+                <Link
+                  to="/dashboard/student/schedule"
+                  className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-slate-800 hover:underline"
+                >
+                  Open Schedule
+                  <FiArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* =================================================
+            FOOTER NOTE
+        ================================================= */}
+
+        <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+              <FiShield className="h-4 w-4" />
+            </div>
+
+            <p className="text-xs leading-5 text-slate-500">
+              Your registration information is protected and associated with
+              your authenticated account.
+            </p>
+          </div>
+
+          <Link
+            to="/contact"
+            className="inline-flex items-center gap-1 text-xs font-bold text-slate-800 hover:underline"
+          >
+            Need Help?
+            <FiArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </main>
     </div>
   );
 };

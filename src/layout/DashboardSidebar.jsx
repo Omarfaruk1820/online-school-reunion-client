@@ -113,7 +113,7 @@ const studentMenu = [
   },
   {
     label: "My Profile",
-    path: "/dashboard/profile",
+    path: "/dashboard/my-profile",
     icon: FiUsers,
   },
   {
@@ -123,7 +123,7 @@ const studentMenu = [
   },
   {
     label: "My Registrations",
-    path: "/dashboard/registrations",
+    path: "/dashboard/my-registration",
     icon: FiClipboard,
   },
   {

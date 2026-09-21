@@ -2,7 +2,9 @@ import axios from "axios";
 import { auth } from "../Auth/firebase.config";
 
 const axiosSecure = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+  // IMPORTANT:
+  // VITE_API_URL must NOT contain /api
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000",
 
   timeout: 15000,
 

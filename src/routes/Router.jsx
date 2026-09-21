@@ -26,8 +26,8 @@ import StudentRoute from "../routes/StudentRoute";
 // Dashboard Pages
 import AdminDashboard from "../dashboard/Admin/AdminDashBoard";
 import StudentDashboard from "../dashboard/User/StudentDashboard";
-import Profile from "../dashboard/User/profile";
-import Registrations from "../dashboard/User/Registrations";
+import Profile from "../dashboard/User/MyProfile";
+import Registrations from "../dashboard/User/MyRegistrations";
 
 const router = createBrowserRouter([
   {
@@ -124,7 +124,7 @@ const router = createBrowserRouter([
         ),
       },
       {
-        path: "/dashboard/profile",
+        path: "/dashboard/my-profile",
         element: (
           <StudentRoute>
             <Profile />
@@ -132,7 +132,7 @@ const router = createBrowserRouter([
         ),
       },
       {
-        path: "/dashboard/registrations",
+        path: "/dashboard/my-registration",
         element: (
           <StudentRoute>
             <Registrations></Registrations>
