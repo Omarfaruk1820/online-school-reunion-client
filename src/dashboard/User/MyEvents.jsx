@@ -1,22 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FiAlertCircle,
-  FiAward,
+  FiArrowRight,
   FiCalendar,
   FiCheckCircle,
-  FiChevronRight,
   FiClock,
   FiGift,
+  FiLoader,
   FiMapPin,
   FiPackage,
   FiRefreshCw,
   FiShield,
-  FiSmartphone,
   FiUser,
   FiUsers,
+  FiXCircle,
 } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
-import { toast } from "react-hot-toast";
 
 import axiosSecure from "../../hooks/axiosSecure";
 
@@ -24,8 +23,8 @@ import axiosSecure from "../../hooks/axiosSecure";
    HELPERS
 ========================================================= */
 
-const normalizeString = (value) => {
-  if (value === undefined || value === null) {
+const cleanString = (value) => {
+  if (value === null || value === undefined) {
     return "";
   }
 
@@ -34,215 +33,269 @@ const normalizeString = (value) => {
 
 const getRegistrationId = (registration) => {
   return (
-    normalizeString(registration?.registrationId) ||
-    normalizeString(registration?._id) ||
-    "Registration"
+    registration?.registrationId || registration?._id || registration?.id || ""
   );
 };
 
-const getGiftItemName = (item) => {
-  if (!item) {
-    return "";
-  }
-
-  if (typeof item === "string") {
-    return item;
-  }
-
-  if (typeof item === "object") {
-    return normalizeString(item.name) || normalizeString(item.title) || "";
-  }
-
-  return "";
+const getEventId = (event, registration) => {
+  return event?._id || event?.id || registration?.reunion?.eventId || "";
 };
 
-const getEventDateParts = (dateValue) => {
-  const dateString = normalizeString(dateValue).slice(0, 10);
-
-  const parts = dateString.split("-");
-
-  if (parts.length !== 3) {
-    return null;
+const formatDate = (dateValue) => {
+  if (!dateValue) {
+    return "Date not available";
   }
 
-  const year = Number(parts[0]);
-  const month = Number(parts[1]);
-  const day = Number(parts[2]);
+  const date = new Date(dateValue);
 
-  if (!year || !month || !day) {
-    return null;
+  if (Number.isNaN(date.getTime())) {
+    return cleanString(dateValue) || "Date not available";
   }
-
-  return {
-    year,
-    month,
-    day,
-  };
-};
-
-const formatEventDate = (dateValue, timezone = "Asia/Dhaka") => {
-  const parts = getEventDateParts(dateValue);
-
-  if (!parts) {
-    return "Date unavailable";
-  }
-
-  /*
-   * Noon UTC prevents the date from moving to
-   * the previous/next day because of timezone conversion.
-   */
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12));
 
   return new Intl.DateTimeFormat("en-BD", {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: timezone,
   }).format(date);
 };
 
-const getEventStatus = (event, registration) => {
-  const registrationStatus = normalizeString(
-    registration?.status,
-  ).toLowerCase();
+const formatTime = (timeValue) => {
+  const value = cleanString(timeValue);
 
-  if (registrationStatus === "cancelled") {
-    return {
-      label: "Cancelled",
-      className: "bg-red-50 text-red-700 border-red-200",
-    };
+  if (!value) {
+    return "";
   }
 
-  if (registrationStatus === "confirmed" || registrationStatus === "approved") {
-    return {
-      label: "Confirmed",
-      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    };
+  /*
+    Convert HH:mm to 12-hour format.
+  */
+
+  const match = value.match(/^(\d{1,2}):(\d{2})$/);
+
+  if (!match) {
+    return value;
   }
 
-  if (registrationStatus === "pending") {
-    return {
-      label: "Pending",
-      className: "bg-amber-50 text-amber-700 border-amber-200",
-    };
+  const hour = Number(match[1]);
+
+  const minute = match[2];
+
+  if (hour < 0 || hour > 23) {
+    return value;
   }
 
-  if (event?.registrationOpen === true) {
-    return {
-      label: "Registered",
-      className: "bg-blue-50 text-blue-700 border-blue-200",
-    };
-  }
+  const suffix = hour >= 12 ? "PM" : "AM";
 
-  return {
-    label: "Registered",
-    className: "bg-slate-50 text-slate-700 border-slate-200",
-  };
+  const displayHour = hour % 12 || 12;
+
+  return `${displayHour}:${minute} ${suffix}`;
 };
 
-const getAttendanceStatus = (attendance) => {
-  const status = normalizeString(attendance?.status).toLowerCase();
-
-  if (status === "checked-in" || status === "present") {
-    return {
-      label: "Checked in",
-      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      icon: FiCheckCircle,
-    };
+const formatDateTime = (dateValue) => {
+  if (!dateValue) {
+    return "";
   }
 
-  return {
-    label: "Not checked in",
-    className: "bg-slate-50 text-slate-600 border-slate-200",
-    icon: FiClock,
-  };
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-BD", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 };
 
-const getPaymentStatus = (registration) => {
-  const status = normalizeString(registration?.paymentStatus).toLowerCase();
+const getStatusLabel = (status) => {
+  const normalized = cleanString(status).toLowerCase();
 
-  if (status === "not-required") {
-    return {
-      label: "No payment required",
-      className: "text-emerald-700",
-    };
-  }
-
-  if (status === "paid" || status === "completed") {
-    return {
-      label: "Paid",
-      className: "text-emerald-700",
-    };
-  }
-
-  if (status === "pending") {
-    return {
-      label: "Payment pending",
-      className: "text-amber-700",
-    };
-  }
-
-  return {
-    label: status || "Not available",
-    className: "text-slate-600",
+  const labels = {
+    confirmed: "Confirmed",
+    pending: "Pending",
+    cancelled: "Cancelled",
+    completed: "Completed",
+    active: "Active",
+    paid: "Paid",
+    failed: "Failed",
   };
-};
 
-const isUpcomingEvent = (eventDate) => {
-  const parts = getEventDateParts(eventDate);
-
-  if (!parts) {
-    return false;
-  }
-
-  const eventDateObject = new Date(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    23,
-    59,
-    59,
+  return (
+    labels[normalized] ||
+    (normalized
+      ? normalized
+          .replace(/[-_]/g, " ")
+          .replace(/\b\w/g, (letter) => letter.toUpperCase())
+      : "Unknown")
   );
+};
 
-  return eventDateObject >= new Date();
+const getStatusClass = (status) => {
+  const normalized = cleanString(status).toLowerCase();
+
+  if (
+    normalized === "confirmed" ||
+    normalized === "completed" ||
+    normalized === "active"
+  ) {
+    return "my-events-status my-events-status-success";
+  }
+
+  if (normalized === "pending") {
+    return "my-events-status my-events-status-warning";
+  }
+
+  if (normalized === "cancelled" || normalized === "failed") {
+    return "my-events-status my-events-status-danger";
+  }
+
+  return "my-events-status my-events-status-neutral";
+};
+
+const getLocationText = (event) => {
+  const venue = event?.venue;
+
+  if (!venue) {
+    return "Venue not available";
+  }
+
+  if (typeof venue === "string") {
+    return venue;
+  }
+
+  const parts = [venue.name, venue.address, venue.city, venue.country]
+    .map(cleanString)
+    .filter(Boolean);
+
+  return parts.join(", ") || "Venue not available";
+};
+
+const getEventSchedule = (event) => {
+  if (!event) {
+    return "Schedule not available";
+  }
+
+  const startTime = formatTime(event.startTime);
+
+  const endTime = formatTime(event.endTime);
+
+  if (startTime && endTime) {
+    return `${startTime} – ${endTime}`;
+  }
+
+  return startTime || endTime || "Schedule not available";
+};
+
+const getGiftItems = (giftPackage, registration) => {
+  /*
+    Preferred source:
+    giftPackage.items
+
+    Fallback:
+    registration.reunion.gifts
+  */
+
+  if (Array.isArray(giftPackage?.items)) {
+    return giftPackage.items;
+  }
+
+  if (Array.isArray(registration?.reunion?.gifts)) {
+    return registration.reunion.gifts;
+  }
+
+  return [];
+};
+
+const getGiftItemName = (item) => {
+  if (typeof item === "string") {
+    return item;
+  }
+
+  if (item && typeof item === "object") {
+    return cleanString(item.name) || cleanString(item.title) || "";
+  }
+
+  return "";
+};
+
+const getGiftItemQuantity = (item) => {
+  if (item && typeof item === "object") {
+    const quantity = Number(item.quantity);
+
+    if (Number.isFinite(quantity) && quantity > 0) {
+      return quantity;
+    }
+  }
+
+  return 1;
+};
+
+const getStudentTypeLabel = (value) => {
+  const normalized = cleanString(value).toLowerCase();
+
+  if (normalized === "alumni") {
+    return "Alumni";
+  }
+
+  if (normalized === "current") {
+    return "Current Student";
+  }
+
+  return value || "Student";
+};
+
+const getDepartmentLabel = (value) => {
+  const normalized = cleanString(value).toLowerCase();
+
+  const labels = {
+    science: "Science",
+    commerce: "Commerce",
+    humanities: "Humanities",
+    vocational: "Vocational",
+  };
+
+  return labels[normalized] || value || "";
+};
+
+const getClassLabel = (classLevel) => {
+  const value = cleanString(classLevel);
+
+  if (!value) {
+    return "";
+  }
+
+  return `Class ${value}`;
+};
+
+const getPaymentLabel = (paymentStatus) => {
+  const normalized = cleanString(paymentStatus).toLowerCase();
+
+  if (normalized === "not-required") {
+    return "No payment required";
+  }
+
+  if (normalized === "paid") {
+    return "Paid";
+  }
+
+  if (normalized === "pending") {
+    return "Payment pending";
+  }
+
+  if (normalized === "failed") {
+    return "Payment failed";
+  }
+
+  if (normalized === "refunded") {
+    return "Refunded";
+  }
+
+  return paymentStatus || "Payment information unavailable";
 };
 
 /* =========================================================
-   SMALL UI COMPONENTS
-========================================================= */
-
-const StatusBadge = ({ children, className = "" }) => {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${className}`}
-    >
-      {children}
-    </span>
-  );
-};
-
-const InfoItem = ({ icon: Icon, label, value }) => {
-  return (
-    <div className="flex min-w-0 items-start gap-3">
-      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-        <Icon className="h-4 w-4" aria-hidden="true" />
-      </div>
-
-      <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          {label}
-        </p>
-
-        <p className="mt-1 break-words text-sm font-semibold text-slate-800">
-          {value || "Not available"}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-/* =========================================================
-   MAIN COMPONENT
+   COMPONENT
 ========================================================= */
 
 const MyEvents = () => {
@@ -256,65 +309,79 @@ const MyEvents = () => {
 
   const [error, setError] = useState("");
 
+  const [errorCode, setErrorCode] = useState("");
+
   /* =======================================================
      FETCH MY EVENTS
   ======================================================= */
 
-  const fetchMyEvents = useCallback(async (showRefreshState = false) => {
+  const fetchMyEvents = useCallback(async (showRefresh = false) => {
     try {
-      if (showRefreshState) {
+      if (showRefresh) {
         setRefreshing(true);
       } else {
         setLoading(true);
       }
 
       setError("");
+      setErrorCode("");
 
-      /*
-       * Base URL:
-       * https://online-school-reunion-server.vercel.app
-       *
-       * Final URL:
-       * https://online-school-reunion-server.vercel.app
-       * /api/registrations/my-events
-       */
+      console.log("Fetching:", "/api/registrations/my-events");
 
       const response = await axiosSecure.get("/api/registrations/my-events");
 
-      const data = response?.data?.data;
+      console.log("My events response:", response.data);
 
-      if (Array.isArray(data)) {
-        setEvents(data);
-      } else {
-        setEvents([]);
+      const responseData = response?.data;
+
+      if (responseData?.success === false) {
+        throw new Error(
+          responseData.message || "Failed to load your reunion events.",
+        );
       }
-    } catch (err) {
-      console.error("MyEvents fetch error:", err);
 
-      const status = err?.response?.status;
+      const receivedData = Array.isArray(responseData?.data)
+        ? responseData.data
+        : [];
 
-      const serverMessage = err?.response?.data?.message;
+      setEvents(receivedData);
+    } catch (requestError) {
+      console.error("MyEvents fetch error:", requestError);
+
+      const status = requestError?.response?.status;
+
+      const serverData = requestError?.response?.data;
+
+      const serverMessage = serverData?.message;
+
+      const serverCode = serverData?.code;
+
+      setErrorCode(serverCode || "");
 
       if (status === 401) {
-        setError("Your session has expired. Please sign in again.");
-
-        toast.error("Please sign in again.");
-
-        return;
-      }
-
-      if (status === 404) {
-        setEvents([]);
-        setError("");
-        return;
-      }
-
-      const message = serverMessage || "Unable to load your reunion events.";
-
-      setError(message);
-
-      if (showRefreshState) {
-        toast.error(message);
+        setError("Your session has expired. Please log in again.");
+      } else if (status === 403) {
+        setError(
+          serverMessage ||
+            "You do not have permission to view your reunion events.",
+        );
+      } else if (status === 404) {
+        setError(
+          serverMessage || "The reunion events endpoint could not be found.",
+        );
+      } else if (status >= 500) {
+        setError(
+          serverMessage ||
+            "The server could not load your reunion events. Please try again.",
+        );
+      } else if (requestError?.code === "ECONNABORTED") {
+        setError(
+          "The request timed out. Please check your connection and try again.",
+        );
+      } else if (requestError?.message) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to load your reunion events. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -331,807 +398,1419 @@ const MyEvents = () => {
   }, [fetchMyEvents]);
 
   /* =======================================================
-     SUMMARY
+     DERIVED DATA
   ======================================================= */
 
   const summary = useMemo(() => {
     const total = events.length;
 
-    const confirmed = events.filter(({ registration }) =>
-      ["confirmed", "approved"].includes(
-        normalizeString(registration?.status).toLowerCase(),
-      ),
+    const confirmed = events.filter(
+      (item) =>
+        cleanString(item?.registration?.status).toLowerCase() === "confirmed",
     ).length;
 
-    const upcoming = events.filter(({ event }) =>
-      isUpcomingEvent(event?.eventDate),
+    const pending = events.filter(
+      (item) =>
+        cleanString(item?.registration?.status).toLowerCase() === "pending",
     ).length;
 
-    const checkedIn = events.filter(({ registration }) =>
-      ["checked-in", "present"].includes(
-        normalizeString(registration?.attendance?.status).toLowerCase(),
-      ),
+    const cancelled = events.filter(
+      (item) =>
+        cleanString(item?.registration?.status).toLowerCase() === "cancelled",
     ).length;
 
     return {
       total,
       confirmed,
-      upcoming,
-      checkedIn,
+      pending,
+      cancelled,
     };
   }, [events]);
 
   /* =======================================================
-     LOADING
+     NAVIGATION
+  ======================================================= */
+
+  const handleViewRegistration = (registrationId) => {
+    if (!registrationId) {
+      return;
+    }
+
+    navigate(`/dashboard/registrations/${encodeURIComponent(registrationId)}`);
+  };
+
+  /* =======================================================
+     LOADING STATE
   ======================================================= */
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="animate-pulse">
-            <div className="h-10 w-64 rounded-lg bg-slate-200" />
+      <>
+        <style>{`
+          .my-events-page {
+            min-height: 100vh;
+            background: #f8fafc;
+            padding: 32px 16px 60px;
+          }
 
-            <div className="mt-3 h-5 w-96 max-w-full rounded bg-slate-200" />
+          .my-events-container {
+            width: 100%;
+            max-width: 1180px;
+            margin: 0 auto;
+          }
 
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[1, 2, 3, 4].map((item) => (
-                <div
-                  key={item}
-                  className="h-28 rounded-2xl bg-white shadow-sm"
-                />
-              ))}
-            </div>
+          .my-events-loading {
+            min-height: 420px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 14px;
+            color: #475569;
+          }
 
-            <div className="mt-8 space-y-6">
-              {[1, 2].map((item) => (
-                <div
-                  key={item}
-                  className="h-96 rounded-3xl bg-white shadow-sm"
-                />
-              ))}
+          .my-events-loading-icon {
+            font-size: 32px;
+            animation: myEventsSpin 1s linear infinite;
+          }
+
+          @keyframes myEventsSpin {
+            from {
+              transform: rotate(0deg);
+            }
+
+            to {
+              transform: rotate(360deg);
+            }
+          }
+
+          .my-events-loading-text {
+            font-size: 15px;
+            font-weight: 600;
+          }
+        `}</style>
+
+        <main className="my-events-page">
+          <div className="my-events-container">
+            <div className="my-events-loading">
+              <FiLoader className="my-events-loading-icon" />
+
+              <span className="my-events-loading-text">
+                Loading your reunion events...
+              </span>
             </div>
           </div>
-        </div>
-      </div>
+        </main>
+      </>
     );
   }
 
   /* =======================================================
-     ERROR
+     ERROR STATE
   ======================================================= */
 
-  if (error) {
+  if (error && events.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto flex min-h-[70vh] max-w-2xl items-center px-4 py-12">
-          <div className="w-full rounded-3xl border border-red-100 bg-white p-6 text-center shadow-sm sm:p-10">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-red-600">
-              <FiAlertCircle className="h-8 w-8" />
-            </div>
+      <>
+        <style>{`
+          .my-events-page {
+            min-height: 100vh;
+            background: #f8fafc;
+            padding: 32px 16px 60px;
+          }
 
-            <h1 className="mt-5 text-2xl font-bold text-slate-900">
-              Unable to load your events
-            </h1>
+          .my-events-container {
+            width: 100%;
+            max-width: 1180px;
+            margin: 0 auto;
+          }
 
-            <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-600">
-              {error}
-            </p>
+          .my-events-error {
+            max-width: 620px;
+            margin: 70px auto 0;
+            background: #ffffff;
+            border: 1px solid #fecaca;
+            border-radius: 18px;
+            padding: 32px 24px;
+            text-align: center;
+            box-shadow: 0 12px 35px rgba(15, 23, 42, 0.06);
+          }
 
-            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => fetchMyEvents(true)}
-                disabled={refreshing}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <FiRefreshCw
-                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                />
-                Try again
-              </button>
+          .my-events-error-icon {
+            width: 58px;
+            height: 58px;
+            margin: 0 auto 16px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fef2f2;
+            color: #dc2626;
+            font-size: 26px;
+          }
 
-              <button
-                type="button"
-                onClick={() => navigate("/reunion-register")}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Register for Reunion
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+          .my-events-error h2 {
+            margin: 0 0 10px;
+            color: #0f172a;
+            font-size: 22px;
+            line-height: 1.3;
+          }
 
-  /* =======================================================
-     EMPTY STATE
-  ======================================================= */
+          .my-events-error p {
+            margin: 0 auto 20px;
+            max-width: 520px;
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.7;
+          }
 
-  if (events.length === 0) {
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          {/* Header */}
-          <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-sm sm:p-8">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/80">
-                <FiAward className="h-4 w-4" />
-                76 Years Celebration
+          .my-events-error-code {
+            margin: -8px 0 20px;
+            color: #94a3b8;
+            font-size: 12px;
+          }
+
+          .my-events-retry {
+            border: 0;
+            border-radius: 10px;
+            padding: 11px 18px;
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+          }
+
+          .my-events-retry:hover {
+            transform: translateY(-1px);
+            opacity: 0.92;
+          }
+
+          @media (max-width: 640px) {
+            .my-events-page {
+              padding: 20px 12px 40px;
+            }
+
+            .my-events-error {
+              margin-top: 35px;
+              padding: 26px 18px;
+            }
+          }
+        `}</style>
+
+        <main className="my-events-page">
+          <div className="my-events-container">
+            <section className="my-events-error">
+              <div className="my-events-error-icon">
+                <FiAlertCircle />
               </div>
 
-              <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
-                My Reunion Events
-              </h1>
+              <h2>Unable to load your events</h2>
 
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                Your registered school reunion events, registration information,
-                gifts and attendance details will appear here.
-              </p>
-            </div>
+              <p>{error}</p>
+
+              {errorCode && (
+                <div className="my-events-error-code">
+                  Error code: {errorCode}
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="my-events-retry"
+                onClick={() => fetchMyEvents(true)}
+                disabled={refreshing}
+              >
+                {refreshing ? (
+                  <FiLoader className="my-events-loading-icon" />
+                ) : (
+                  <FiRefreshCw />
+                )}
+                Try Again
+              </button>
+            </section>
           </div>
-
-          {/* Empty */}
-          <div className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-sm sm:px-10">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100 text-slate-500">
-              <FiCalendar className="h-9 w-9" />
-            </div>
-
-            <h2 className="mt-6 text-2xl font-bold text-slate-900">
-              No reunion events yet
-            </h2>
-
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
-              You have not registered for any reunion event yet. Join the Grand
-              School Reunion 2027 and celebrate this special milestone with your
-              school community.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => navigate("/reunion-register")}
-              className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Register for Reunion
-              <FiChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
+        </main>
+      </>
     );
   }
 
   /* =======================================================
-     MAIN UI
+     MAIN RENDER
   ======================================================= */
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        {/* =================================================
-            PAGE HEADER
-        ================================================= */}
+    <>
+      <style>{`
+        .my-events-page {
+          min-height: 100vh;
+          background: #f8fafc;
+          padding: 30px 16px 70px;
+        }
 
-        <section className="relative overflow-hidden rounded-3xl bg-slate-900 px-5 py-7 text-white shadow-sm sm:px-8 sm:py-9">
-          <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-white/5" />
+        .my-events-container {
+          width: 100%;
+          max-width: 1180px;
+          margin: 0 auto;
+        }
 
-          <div className="absolute -bottom-28 right-20 h-64 w-64 rounded-full bg-white/5" />
+        /* -------------------------------------------------
+           HEADER
+        ------------------------------------------------- */
 
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/80">
-                <FiAward className="h-4 w-4" />
-                76 Years Celebration
+        .my-events-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 24px;
+        }
+
+        .my-events-header-left {
+          min-width: 0;
+        }
+
+        .my-events-eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          margin-bottom: 8px;
+          color: #2563eb;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .my-events-title {
+          margin: 0;
+          color: #0f172a;
+          font-size: clamp(27px, 4vw, 38px);
+          line-height: 1.15;
+          font-weight: 800;
+          letter-spacing: -0.025em;
+        }
+
+        .my-events-subtitle {
+          max-width: 680px;
+          margin: 10px 0 0;
+          color: #64748b;
+          font-size: 15px;
+          line-height: 1.7;
+        }
+
+        .my-events-refresh-button {
+          flex-shrink: 0;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #334155;
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          box-shadow: 0 3px 12px rgba(15, 23, 42, 0.04);
+          transition:
+            background 0.2s ease,
+            border-color 0.2s ease,
+            transform 0.2s ease;
+        }
+
+        .my-events-refresh-button:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          transform: translateY(-1px);
+        }
+
+        .my-events-refresh-button:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .my-events-refresh-spin {
+          animation: myEventsSpin 1s linear infinite;
+        }
+
+        /* -------------------------------------------------
+           SUMMARY
+        ------------------------------------------------- */
+
+        .my-events-summary {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+          margin-bottom: 28px;
+        }
+
+        .my-events-summary-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 15px;
+          padding: 18px;
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          min-width: 0;
+        }
+
+        .my-events-summary-icon {
+          width: 42px;
+          height: 42px;
+          flex-shrink: 0;
+          border-radius: 11px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f1f5f9;
+          color: #334155;
+          font-size: 19px;
+        }
+
+        .my-events-summary-content {
+          min-width: 0;
+        }
+
+        .my-events-summary-number {
+          display: block;
+          color: #0f172a;
+          font-size: 22px;
+          line-height: 1;
+          font-weight: 800;
+        }
+
+        .my-events-summary-label {
+          display: block;
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        /* -------------------------------------------------
+           INLINE ERROR
+        ------------------------------------------------- */
+
+        .my-events-inline-error {
+          margin-bottom: 20px;
+          border: 1px solid #fed7aa;
+          background: #fff7ed;
+          color: #9a3412;
+          border-radius: 12px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .my-events-inline-error svg {
+          flex-shrink: 0;
+        }
+
+        /* -------------------------------------------------
+           EMPTY
+        ------------------------------------------------- */
+
+        .my-events-empty {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 18px;
+          padding: 55px 22px;
+          text-align: center;
+        }
+
+        .my-events-empty-icon {
+          width: 68px;
+          height: 68px;
+          margin: 0 auto 18px;
+          border-radius: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f1f5f9;
+          color: #475569;
+          font-size: 30px;
+        }
+
+        .my-events-empty h2 {
+          margin: 0 0 8px;
+          color: #0f172a;
+          font-size: 22px;
+        }
+
+        .my-events-empty p {
+          max-width: 520px;
+          margin: 0 auto 22px;
+          color: #64748b;
+          font-size: 14px;
+          line-height: 1.7;
+        }
+
+        .my-events-register-button {
+          border: 0;
+          border-radius: 10px;
+          padding: 11px 18px;
+          background: #0f172a;
+          color: #ffffff;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        /* -------------------------------------------------
+           EVENT LIST
+        ------------------------------------------------- */
+
+        .my-events-list {
+          display: grid;
+          gap: 20px;
+        }
+
+        .my-event-card {
+          overflow: hidden;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 18px;
+          box-shadow: 0 8px 28px rgba(15, 23, 42, 0.045);
+        }
+
+        .my-event-card-top {
+          padding: 20px 20px 18px;
+          border-bottom: 1px solid #eef2f7;
+        }
+
+        .my-event-card-heading {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 18px;
+        }
+
+        .my-event-card-title-area {
+          min-width: 0;
+        }
+
+        .my-event-edition {
+          margin-bottom: 7px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .my-event-card-title {
+          margin: 0;
+          color: #0f172a;
+          font-size: clamp(20px, 3vw, 25px);
+          line-height: 1.25;
+          font-weight: 800;
+        }
+
+        .my-event-card-id {
+          margin-top: 8px;
+          color: #94a3b8;
+          font-size: 12px;
+          word-break: break-all;
+        }
+
+        .my-events-status {
+          flex-shrink: 0;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 999px;
+          padding: 7px 10px;
+          font-size: 11px;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .my-events-status-success {
+          background: #ecfdf5;
+          color: #047857;
+        }
+
+        .my-events-status-warning {
+          background: #fffbeb;
+          color: #b45309;
+        }
+
+        .my-events-status-danger {
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .my-events-status-neutral {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        /* -------------------------------------------------
+           EVENT DETAILS
+        ------------------------------------------------- */
+
+        .my-event-details {
+          padding: 20px;
+          display: grid;
+          grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+          gap: 18px;
+        }
+
+        .my-event-info-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 11px;
+        }
+
+        .my-event-info-item {
+          min-width: 0;
+          border: 1px solid #edf2f7;
+          border-radius: 12px;
+          padding: 13px;
+          background: #fafcff;
+        }
+
+        .my-event-info-label {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          margin-bottom: 6px;
+          color: #94a3b8;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .my-event-info-label svg {
+          font-size: 14px;
+        }
+
+        .my-event-info-value {
+          color: #334155;
+          font-size: 13px;
+          line-height: 1.55;
+          font-weight: 700;
+          word-break: break-word;
+        }
+
+        /* -------------------------------------------------
+           PARTICIPANT
+        ------------------------------------------------- */
+
+        .my-event-participant {
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 16px;
+        }
+
+        .my-event-section-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin: 0 0 13px;
+          color: #0f172a;
+          font-size: 14px;
+          font-weight: 800;
+        }
+
+        .my-event-section-title svg {
+          color: #475569;
+        }
+
+        .my-event-participant-name {
+          color: #0f172a;
+          font-size: 16px;
+          font-weight: 800;
+          margin-bottom: 4px;
+        }
+
+        .my-event-participant-email {
+          color: #64748b;
+          font-size: 12px;
+          word-break: break-word;
+        }
+
+        .my-event-participant-meta {
+          margin-top: 13px;
+          display: grid;
+          gap: 8px;
+        }
+
+        .my-event-meta-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          font-size: 12px;
+        }
+
+        .my-event-meta-label {
+          color: #94a3b8;
+          font-weight: 600;
+        }
+
+        .my-event-meta-value {
+          color: #334155;
+          font-weight: 700;
+          text-align: right;
+          word-break: break-word;
+        }
+
+        /* -------------------------------------------------
+           PACKAGE
+        ------------------------------------------------- */
+
+        .my-event-package {
+          grid-column: 1 / -1;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 17px;
+        }
+
+        .my-event-package-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 15px;
+          margin-bottom: 14px;
+        }
+
+        .my-event-package-title {
+          margin: 0;
+          color: #0f172a;
+          font-size: 15px;
+          font-weight: 800;
+        }
+
+        .my-event-package-name {
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 12px;
+        }
+
+        .my-event-tshirt {
+          flex-shrink: 0;
+          border-radius: 9px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          padding: 8px 10px;
+          color: #334155;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .my-event-gifts {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 9px;
+        }
+
+        .my-event-gift-item {
+          min-width: 0;
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 10px;
+          border-radius: 10px;
+          background: #f8fafc;
+          color: #475569;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .my-event-gift-icon {
+          flex-shrink: 0;
+          color: #475569;
+          margin-top: 1px;
+        }
+
+        .my-event-gift-name {
+          min-width: 0;
+          word-break: break-word;
+        }
+
+        .my-event-gift-quantity {
+          margin-left: 4px;
+          color: #94a3b8;
+          font-weight: 700;
+        }
+
+        .my-event-no-gifts {
+          color: #94a3b8;
+          font-size: 12px;
+          padding: 6px 0;
+        }
+
+        /* -------------------------------------------------
+           FOOTER
+        ------------------------------------------------- */
+
+        .my-event-card-footer {
+          padding: 15px 20px;
+          background: #fafafa;
+          border-top: 1px solid #eef2f7;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+        }
+
+        .my-event-footer-info {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #64748b;
+          font-size: 12px;
+        }
+
+        .my-event-footer-info svg {
+          flex-shrink: 0;
+        }
+
+        .my-event-view-button {
+          flex-shrink: 0;
+          border: 0;
+          border-radius: 10px;
+          background: #0f172a;
+          color: #ffffff;
+          padding: 10px 14px;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 800;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          transition:
+            transform 0.2s ease,
+            opacity 0.2s ease;
+        }
+
+        .my-event-view-button:hover {
+          transform: translateY(-1px);
+          opacity: 0.92;
+        }
+
+        /* -------------------------------------------------
+           SECURITY NOTE
+        ------------------------------------------------- */
+
+        .my-events-security-note {
+          margin-top: 18px;
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+
+        .my-events-security-note svg {
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+
+        /* -------------------------------------------------
+           RESPONSIVE
+        ------------------------------------------------- */
+
+        @media (max-width: 900px) {
+          .my-events-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .my-event-details {
+            grid-template-columns: 1fr;
+          }
+
+          .my-event-gifts {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 640px) {
+          .my-events-page {
+            padding: 20px 12px 45px;
+          }
+
+          .my-events-header {
+            flex-direction: column;
+            gap: 15px;
+          }
+
+          .my-events-refresh-button {
+            width: 100%;
+            justify-content: center;
+          }
+
+          .my-events-summary {
+            grid-template-columns: 1fr 1fr;
+            gap: 9px;
+          }
+
+          .my-events-summary-card {
+            padding: 13px;
+            gap: 9px;
+          }
+
+          .my-events-summary-icon {
+            width: 36px;
+            height: 36px;
+            font-size: 16px;
+          }
+
+          .my-events-summary-number {
+            font-size: 19px;
+          }
+
+          .my-events-summary-label {
+            font-size: 10px;
+          }
+
+          .my-event-card-heading {
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          .my-events-status {
+            align-self: flex-start;
+          }
+
+          .my-event-card-top {
+            padding: 17px 15px;
+          }
+
+          .my-event-details {
+            padding: 15px;
+            gap: 13px;
+          }
+
+          .my-event-info-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .my-event-gifts {
+            grid-template-columns: 1fr;
+          }
+
+          .my-event-package-header {
+            flex-direction: column;
+          }
+
+          .my-event-card-footer {
+            padding: 13px 15px;
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .my-event-view-button {
+            width: 100%;
+            justify-content: center;
+          }
+
+          .my-event-footer-info {
+            align-items: flex-start;
+          }
+        }
+      `}</style>
+
+      <main className="my-events-page">
+        <div className="my-events-container">
+          {/* =================================================
+              HEADER
+          ================================================= */}
+
+          <header className="my-events-header">
+            <div className="my-events-header-left">
+              <div className="my-events-eyebrow">
+                <FiUsers />
+                My Reunion Events
               </div>
 
-              <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
-                My Reunion Events
-              </h1>
+              <h1 className="my-events-title">Your Reunion Events</h1>
 
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                Keep track of your reunion registrations, event details, reunion
-                gifts and attendance status in one place.
+              <p className="my-events-subtitle">
+                View your reunion registrations, event details, participant
+                information, package details, gifts, and registration status in
+                one place.
               </p>
             </div>
 
             <button
               type="button"
+              className="my-events-refresh-button"
               onClick={() => fetchMyEvents(true)}
               disabled={refreshing}
-              className="relative inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <FiRefreshCw
-                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-              />
-
-              {refreshing ? "Refreshing..." : "Refresh"}
+              {refreshing ? (
+                <FiLoader className="my-events-refresh-spin" />
+              ) : (
+                <FiRefreshCw />
+              )}
+              Refresh
             </button>
-          </div>
-        </section>
+          </header>
 
-        {/* =================================================
-            SUMMARY CARDS
-        ================================================= */}
+          {/* =================================================
+              SUMMARY
+          ================================================= */}
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500">
-                  Total Events
-                </p>
+          <section
+            className="my-events-summary"
+            aria-label="Registration summary"
+          >
+            <div className="my-events-summary-card">
+              <div className="my-events-summary-icon">
+                <FiCalendar />
+              </div>
 
-                <p className="mt-2 text-3xl font-bold text-slate-900">
+              <div className="my-events-summary-content">
+                <span className="my-events-summary-number">
                   {summary.total}
-                </p>
-              </div>
+                </span>
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                <FiCalendar className="h-5 w-5" />
+                <span className="my-events-summary-label">Total Events</span>
               </div>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500">Confirmed</p>
+            <div className="my-events-summary-card">
+              <div className="my-events-summary-icon">
+                <FiCheckCircle />
+              </div>
 
-                <p className="mt-2 text-3xl font-bold text-emerald-600">
+              <div className="my-events-summary-content">
+                <span className="my-events-summary-number">
                   {summary.confirmed}
-                </p>
-              </div>
+                </span>
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <FiCheckCircle className="h-5 w-5" />
+                <span className="my-events-summary-label">Confirmed</span>
               </div>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500">Upcoming</p>
-
-                <p className="mt-2 text-3xl font-bold text-blue-600">
-                  {summary.upcoming}
-                </p>
+            <div className="my-events-summary-card">
+              <div className="my-events-summary-icon">
+                <FiClock />
               </div>
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <FiClock className="h-5 w-5" />
+              <div className="my-events-summary-content">
+                <span className="my-events-summary-number">
+                  {summary.pending}
+                </span>
+
+                <span className="my-events-summary-label">Pending</span>
               </div>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500">Checked In</p>
-
-                <p className="mt-2 text-3xl font-bold text-violet-600">
-                  {summary.checkedIn}
-                </p>
+            <div className="my-events-summary-card">
+              <div className="my-events-summary-icon">
+                <FiXCircle />
               </div>
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                <FiUsers className="h-5 w-5" />
+              <div className="my-events-summary-content">
+                <span className="my-events-summary-number">
+                  {summary.cancelled}
+                </span>
+
+                <span className="my-events-summary-label">Cancelled</span>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* =================================================
-            EVENT CARDS
-        ================================================= */}
+          {/* =================================================
+              INLINE ERROR
+          ================================================= */}
 
-        <section className="mt-8 space-y-6">
-          {events.map(({ registration, event, giftPackage }, index) => {
-            const eventStatus = getEventStatus(event, registration);
+          {error && (
+            <div className="my-events-inline-error">
+              <FiAlertCircle />
 
-            const attendanceStatus = getAttendanceStatus(
-              registration?.attendance,
-            );
+              <span>{error}</span>
+            </div>
+          )}
 
-            const paymentStatus = getPaymentStatus(registration);
+          {/* =================================================
+              EMPTY STATE
+          ================================================= */}
 
-            const AttendanceIcon = attendanceStatus.icon;
+          {events.length === 0 ? (
+            <section className="my-events-empty">
+              <div className="my-events-empty-icon">
+                <FiCalendar />
+              </div>
 
-            const packageItems = Array.isArray(giftPackage?.items)
-              ? giftPackage.items
-              : [];
+              <h2>No reunion registrations yet</h2>
 
-            const eventTitle =
-              normalizeString(event?.title) ||
-              normalizeString(registration?.reunion?.eventTitle) ||
-              "Grand School Reunion 2027";
+              <p>
+                You have not registered for any reunion event yet. Once you
+                complete a registration, your reunion event will appear here.
+              </p>
 
-            const eventDate = event?.eventDate || null;
-
-            const timezone = normalizeString(event?.timezone) || "Asia/Dhaka";
-
-            const venueName =
-              normalizeString(event?.venue?.name) || "School Campus";
-
-            const venueAddress = normalizeString(event?.venue?.address);
-
-            const venueCity = normalizeString(event?.venue?.city);
-
-            const studentName = normalizeString(
-              registration?.participant?.name,
-            );
-
-            const studentType = normalizeString(
-              registration?.schoolInfo?.studentType,
-            );
-
-            const classLevel = normalizeString(
-              registration?.schoolInfo?.classLevel,
-            );
-
-            const department = normalizeString(
-              registration?.schoolInfo?.department,
-            );
-
-            const batchYear = registration?.schoolInfo?.batchYear;
-
-            const tshirtSize = normalizeString(
-              registration?.reunion?.tShirt?.size,
-            );
-
-            const registrationId = getRegistrationId(registration);
-
-            return (
-              <article
-                key={registration?._id || registrationId || index}
-                className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+              <button
+                type="button"
+                className="my-events-register-button"
+                onClick={() => navigate("/reunion-register")}
               >
-                {/* ---------------------------------------
-                      EVENT CARD HEADER
-                  --------------------------------------- */}
+                Register for Reunion
+                <FiArrowRight />
+              </button>
+            </section>
+          ) : (
+            /* ===============================================
+               EVENT LIST
+            =============================================== */
 
-                <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white p-5 sm:p-6">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex min-w-0 gap-4">
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
-                        <FiAward className="h-6 w-6" />
-                      </div>
+            <section
+              className="my-events-list"
+              aria-label="Your reunion events"
+            >
+              {events.map((item, index) => {
+                const registration = item?.registration || {};
 
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge className={eventStatus.className}>
-                            {eventStatus.label}
-                          </StatusBadge>
+                const event = item?.event || null;
 
-                          {event?.edition && (
-                            <span className="text-xs font-medium text-slate-400">
-                              {event.edition}
-                            </span>
+                const giftPackage = item?.giftPackage || null;
+
+                const registrationId = getRegistrationId(registration);
+
+                const eventId = getEventId(event, registration);
+
+                const status =
+                  cleanString(registration.status).toLowerCase() || "unknown";
+
+                const participant = registration.participant || {};
+
+                const schoolInfo = registration.schoolInfo || {};
+
+                const reunion = registration.reunion || {};
+
+                const giftItems = getGiftItems(giftPackage, registration);
+
+                const packageName =
+                  cleanString(
+                    giftPackage?.name ||
+                      giftPackage?.title ||
+                      reunion.packageName,
+                  ) || "General Reunion Package";
+
+                const tshirtSize = cleanString(
+                  reunion.tShirt || reunion.tshirtSize || reunion.tShirtSize,
+                );
+
+                const paymentStatus = cleanString(registration.paymentStatus);
+
+                const eventTitle =
+                  cleanString(event?.title || reunion.eventTitle) ||
+                  "Grand School Reunion 2027";
+
+                const eventDate = event?.eventDate;
+
+                const location = getLocationText(event);
+
+                const schedule = getEventSchedule(event);
+
+                const eventEdition = cleanString(event?.edition);
+
+                return (
+                  <article
+                    key={registrationId || eventId || index}
+                    className="my-event-card"
+                  >
+                    {/* =====================================
+                          CARD TOP
+                      ===================================== */}
+
+                    <div className="my-event-card-top">
+                      <div className="my-event-card-heading">
+                        <div className="my-event-card-title-area">
+                          {eventEdition && (
+                            <div className="my-event-edition">
+                              {eventEdition}
+                            </div>
+                          )}
+
+                          <h2 className="my-event-card-title">{eventTitle}</h2>
+
+                          {registrationId && (
+                            <div className="my-event-card-id">
+                              Registration ID: <strong>{registrationId}</strong>
+                            </div>
                           )}
                         </div>
 
-                        <h2 className="mt-2 break-words text-xl font-bold text-slate-900 sm:text-2xl">
-                          {eventTitle}
-                        </h2>
+                        <div className={getStatusClass(status)}>
+                          {status === "confirmed" ? (
+                            <FiCheckCircle />
+                          ) : status === "cancelled" ? (
+                            <FiXCircle />
+                          ) : (
+                            <FiClock />
+                          )}
 
-                        <p className="mt-1 text-sm text-slate-500">
-                          Registration ID:{" "}
-                          <span className="font-semibold text-slate-700">
-                            {registrationId}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0">
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Registration Status
-                        </p>
-
-                        <div className="mt-1 flex items-center gap-2">
-                          <FiCheckCircle className="h-4 w-4 text-emerald-600" />
-
-                          <span className="text-sm font-bold text-slate-800">
-                            {eventStatus.label}
-                          </span>
+                          {getStatusLabel(status)}
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* ---------------------------------------
-                      EVENT INFORMATION
-                  --------------------------------------- */}
+                    {/* =====================================
+                          EVENT DETAILS
+                      ===================================== */}
 
-                <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-4">
-                  <InfoItem
-                    icon={FiCalendar}
-                    label="Event Date"
-                    value={formatEventDate(eventDate, timezone)}
-                  />
+                    <div className="my-event-details">
+                      <div className="my-event-info-grid">
+                        {/* Date */}
 
-                  <InfoItem
-                    icon={FiClock}
-                    label="Event Time"
-                    value={
-                      event?.startTime && event?.endTime
-                        ? `${event.startTime} – ${event.endTime}`
-                        : "Time unavailable"
-                    }
-                  />
+                        <div className="my-event-info-item">
+                          <div className="my-event-info-label">
+                            <FiCalendar />
+                            Event Date
+                          </div>
 
-                  <InfoItem
-                    icon={FiMapPin}
-                    label="Venue"
-                    value={[venueName, venueCity].filter(Boolean).join(", ")}
-                  />
+                          <div className="my-event-info-value">
+                            {formatDate(eventDate)}
+                          </div>
+                        </div>
 
-                  <InfoItem
-                    icon={FiSmartphone}
-                    label="Phone"
-                    value={registration?.participant?.phone}
-                  />
-                </div>
+                        {/* Time */}
 
-                {/* ---------------------------------------
-                      VENUE ADDRESS
-                  --------------------------------------- */}
+                        <div className="my-event-info-item">
+                          <div className="my-event-info-label">
+                            <FiClock />
+                            Event Time
+                          </div>
 
-                {venueAddress && (
-                  <div className="mx-5 mb-5 flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:mx-6 sm:mb-6">
-                    <FiMapPin className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+                          <div className="my-event-info-value">{schedule}</div>
+                        </div>
 
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        Venue Address
-                      </p>
+                        {/* Venue */}
 
-                      <p className="mt-1 text-sm font-medium leading-6 text-slate-700">
-                        {venueAddress}
-                      </p>
-                    </div>
-                  </div>
-                )}
+                        <div className="my-event-info-item">
+                          <div className="my-event-info-label">
+                            <FiMapPin />
+                            Venue
+                          </div>
 
-                {/* ---------------------------------------
-                      PARTICIPANT + SCHOOL INFO
-                  --------------------------------------- */}
+                          <div className="my-event-info-value">{location}</div>
+                        </div>
 
-                <div className="grid gap-6 border-t border-slate-100 p-5 sm:p-6 lg:grid-cols-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                        <FiUser className="h-4 w-4" />
+                        {/* Payment */}
+
+                        <div className="my-event-info-item">
+                          <div className="my-event-info-label">
+                            <FiCheckCircle />
+                            Payment
+                          </div>
+
+                          <div className="my-event-info-value">
+                            {getPaymentLabel(paymentStatus)}
+                          </div>
+                        </div>
                       </div>
 
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900">
+                      {/* =================================
+                            PARTICIPANT
+                        ================================= */}
+
+                      <div className="my-event-participant">
+                        <h3 className="my-event-section-title">
+                          <FiUser />
                           Participant
                         </h3>
 
-                        <p className="text-xs text-slate-400">
-                          Registered attendee
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                      <InfoItem
-                        icon={FiUser}
-                        label="Name"
-                        value={studentName}
-                      />
-
-                      <InfoItem
-                        icon={FiSmartphone}
-                        label="Phone"
-                        value={registration?.participant?.phone}
-                      />
-
-                      <InfoItem
-                        icon={FiMapPin}
-                        label="District"
-                        value={registration?.participant?.district}
-                      />
-
-                      <InfoItem
-                        icon={FiMapPin}
-                        label="City"
-                        value={registration?.participant?.city}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                        <FiUsers className="h-4 w-4" />
-                      </div>
-
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900">
-                          School Information
-                        </h3>
-
-                        <p className="text-xs text-slate-400">
-                          Reunion participant profile
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                      <InfoItem
-                        icon={FiUsers}
-                        label="Student Type"
-                        value={
-                          studentType
-                            ? studentType.charAt(0).toUpperCase() +
-                              studentType.slice(1)
-                            : ""
-                        }
-                      />
-
-                      <InfoItem
-                        icon={FiAward}
-                        label="Class"
-                        value={classLevel ? `Class ${classLevel}` : ""}
-                      />
-
-                      <InfoItem
-                        icon={FiCalendar}
-                        label="Batch"
-                        value={batchYear ? String(batchYear) : ""}
-                      />
-
-                      <InfoItem
-                        icon={FiUsers}
-                        label="Department"
-                        value={
-                          department
-                            ? department.charAt(0).toUpperCase() +
-                              department.slice(1)
-                            : "Not applicable"
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* ---------------------------------------
-                      PACKAGE
-                  --------------------------------------- */}
-
-                <div className="border-t border-slate-100 bg-slate-50/60 p-5 sm:p-6">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm">
-                          <FiGift className="h-4 w-4" />
+                        <div className="my-event-participant-name">
+                          {participant.name || "Name not available"}
                         </div>
 
-                        <div>
-                          <h3 className="text-base font-bold text-slate-900">
-                            Reunion Gift Package
-                          </h3>
-
-                          <p className="text-xs text-slate-400">
-                            Gifts included with your registration
-                          </p>
+                        <div className="my-event-participant-email">
+                          {participant.email || "Email not available"}
                         </div>
-                      </div>
 
-                      <h4 className="mt-4 text-lg font-bold text-slate-800">
-                        {normalizeString(
-                          giftPackage?.name ||
-                            giftPackage?.title ||
-                            registration?.reunion?.packageName,
-                        ) || "General Reunion Package"}
-                      </h4>
-                    </div>
+                        <div className="my-event-participant-meta">
+                          {participant.phone && (
+                            <div className="my-event-meta-row">
+                              <span className="my-event-meta-label">Phone</span>
 
-                    {tshirtSize && (
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          T-Shirt Size
-                        </p>
-
-                        <p className="mt-1 text-lg font-bold text-slate-900">
-                          {tshirtSize}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {packageItems.length > 0 ? (
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {packageItems.map((item, itemIndex) => {
-                        const itemName = getGiftItemName(item);
-
-                        if (!itemName) {
-                          return null;
-                        }
-
-                        return (
-                          <div
-                            key={item?.id || itemName || itemIndex}
-                            className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4"
-                          >
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                              <FiCheckCircle className="h-4 w-4" />
+                              <span className="my-event-meta-value">
+                                {participant.phone}
+                              </span>
                             </div>
+                          )}
 
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-800">
-                                {itemName}
-                              </p>
+                          {schoolInfo.studentType && (
+                            <div className="my-event-meta-row">
+                              <span className="my-event-meta-label">Type</span>
 
-                              {typeof item === "object" &&
-                                item?.description && (
-                                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                                    {item.description}
-                                  </p>
-                                )}
+                              <span className="my-event-meta-value">
+                                {getStudentTypeLabel(schoolInfo.studentType)}
+                              </span>
+                            </div>
+                          )}
+
+                          {schoolInfo.classLevel && (
+                            <div className="my-event-meta-row">
+                              <span className="my-event-meta-label">Class</span>
+
+                              <span className="my-event-meta-value">
+                                {getClassLabel(schoolInfo.classLevel)}
+                              </span>
+                            </div>
+                          )}
+
+                          {schoolInfo.batchYear && (
+                            <div className="my-event-meta-row">
+                              <span className="my-event-meta-label">Batch</span>
+
+                              <span className="my-event-meta-value">
+                                {schoolInfo.batchYear}
+                              </span>
+                            </div>
+                          )}
+
+                          {schoolInfo.department && (
+                            <div className="my-event-meta-row">
+                              <span className="my-event-meta-label">
+                                Department
+                              </span>
+
+                              <span className="my-event-meta-value">
+                                {getDepartmentLabel(schoolInfo.department)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* =================================
+                            PACKAGE + GIFTS
+                        ================================= */}
+
+                      <div className="my-event-package">
+                        <div className="my-event-package-header">
+                          <div>
+                            <h3 className="my-event-package-title">
+                              <FiPackage
+                                style={{
+                                  marginRight: "7px",
+                                  verticalAlign: "middle",
+                                }}
+                              />
+                              Reunion Package
+                            </h3>
+
+                            <div className="my-event-package-name">
+                              {packageName}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center gap-3">
-                        <FiPackage className="h-5 w-5 text-slate-500" />
 
-                        <p className="text-sm text-slate-600">
-                          Gift package details are not available yet.
-                        </p>
+                          {tshirtSize && (
+                            <div className="my-event-tshirt">
+                              T-Shirt: {tshirtSize}
+                            </div>
+                          )}
+                        </div>
+
+                        {giftItems.length > 0 ? (
+                          <div className="my-event-gifts">
+                            {giftItems.map((gift, giftIndex) => {
+                              const giftName = getGiftItemName(gift);
+
+                              if (!giftName) {
+                                return null;
+                              }
+
+                              const quantity = getGiftItemQuantity(gift);
+
+                              return (
+                                <div
+                                  key={`${giftName}-${giftIndex}`}
+                                  className="my-event-gift-item"
+                                >
+                                  <FiGift className="my-event-gift-icon" />
+
+                                  <span className="my-event-gift-name">
+                                    {giftName}
+
+                                    {quantity > 1 && (
+                                      <span className="my-event-gift-quantity">
+                                        × {quantity}
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="my-event-no-gifts">
+                            No gift package information is currently available.
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
 
-                {/* ---------------------------------------
-                      ATTENDANCE + PAYMENT + QR
-                  --------------------------------------- */}
+                    {/* =====================================
+                          CARD FOOTER
+                      ===================================== */}
 
-                <div className="grid gap-4 border-t border-slate-100 p-5 sm:p-6 md:grid-cols-3">
-                  {/* Attendance */}
+                    <div className="my-event-card-footer">
+                      <div className="my-event-footer-info">
+                        <FiCheckCircle />
 
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                        <AttendanceIcon className="h-5 w-5" />
+                        <span>
+                          Registered{" "}
+                          {formatDateTime(registration.createdAt) ||
+                            "date not available"}
+                        </span>
                       </div>
 
-                      <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Attendance
-                        </p>
-
-                        <p className="mt-1 text-sm font-bold text-slate-800">
-                          {attendanceStatus.label}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Payment */}
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                        <FiShield className="h-5 w-5" />
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Payment
-                        </p>
-
-                        <p
-                          className={`mt-1 text-sm font-bold ${paymentStatus.className}`}
+                      {registrationId && (
+                        <button
+                          type="button"
+                          className="my-event-view-button"
+                          onClick={() => handleViewRegistration(registrationId)}
                         >
-                          {paymentStatus.label}
-                        </p>
-                      </div>
+                          View Registration
+                          <FiArrowRight />
+                        </button>
+                      )}
                     </div>
-                  </div>
+                  </article>
+                );
+              })}
+            </section>
+          )}
 
-                  {/* QR */}
+          {/* =================================================
+              SECURITY NOTE
+          ================================================= */}
 
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                        <FiSmartphone className="h-5 w-5" />
-                      </div>
+          {events.length > 0 && (
+            <div className="my-events-security-note">
+              <FiShield />
 
-                      <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Attendance QR
-                        </p>
-
-                        <p className="mt-1 text-sm font-bold text-slate-800">
-                          {registration?.qrCode?.enabled
-                            ? "Ready"
-                            : "Not available"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {registration?.qrCode?.enabled && (
-                      <p className="mt-3 text-xs leading-5 text-slate-500">
-                        Your attendance QR is generated and ready for reunion
-                        check-in.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* ---------------------------------------
-                      FOOTER
-                  --------------------------------------- */}
-
-                <div className="flex flex-col gap-3 border-t border-slate-100 bg-white p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-                  <div>
-                    <p className="text-xs text-slate-400">Registered on</p>
-
-                    <p className="mt-1 text-sm font-semibold text-slate-700">
-                      {registration?.createdAt
-                        ? new Date(registration.createdAt).toLocaleDateString(
-                            "en-BD",
-                            {
-                              day: "numeric",
-                              month: "long",
-                              year: "numeric",
-                            },
-                          )
-                        : "Date unavailable"}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate(`/dashboard/registrations/${registrationId}`)
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                  >
-                    View Registration
-                    <FiChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </section>
-
-        {/* =================================================
-            BOTTOM NOTE
-        ================================================= */}
-
-        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-              <FiShield className="h-5 w-5" />
+              <span>
+                Your registration information is available only to your
+                authenticated account. Sensitive QR verification tokens are not
+                displayed on this page.
+              </span>
             </div>
-
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Your registration information
-              </h3>
-
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Your reunion registration and attendance information is linked
-                to your authenticated account. Keep your registration details
-                available when attending the reunion.
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
+          )}
+        </div>
+      </main>
+    </>
   );
 };
 
