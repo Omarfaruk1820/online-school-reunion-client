@@ -28,6 +28,7 @@ import AdminDashboard from "../dashboard/Admin/AdminDashBoard";
 import StudentDashboard from "../dashboard/User/StudentDashboard";
 import Profile from "../dashboard/User/MyProfile";
 import Registrations from "../dashboard/User/MyRegistrations";
+import MyEvents from "../dashboard/User/MyEvents";
 
 const router = createBrowserRouter([
   {
@@ -116,7 +117,7 @@ const router = createBrowserRouter([
 
       // Student Dashboard
       {
-        path: "student",
+        path: "/dashboard/student-dashboard",
         element: (
           <StudentRoute>
             <StudentDashboard />
@@ -136,6 +137,14 @@ const router = createBrowserRouter([
         element: (
           <StudentRoute>
             <Registrations></Registrations>
+          </StudentRoute>
+        ),
+      },
+      {
+        path: "/dashboard/my-events",
+        element: (
+          <StudentRoute>
+            <MyEvents></MyEvents>
           </StudentRoute>
         ),
       },

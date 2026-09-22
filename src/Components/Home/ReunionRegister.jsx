@@ -23,7 +23,7 @@ import toast from "react-hot-toast";
 import axiosSecure from "../../hooks/axiosSecure";
 import useAuth from "../../hooks/useAuth";
 
-const API_EVENT_URL = "/registrations";
+const API_EVENT_URL = "/api/registrations";
 
 const DEFAULT_GIFT_ITEMS = [
   "Commemorative Reunion Bag",
@@ -654,17 +654,49 @@ const ReunionRegister = () => {
 
   const registrationMutation = useMutation({
     mutationFn: async (formData) => {
-      if (!eventId) {
-        throw new Error("Reunion event ID is missing.");
+      /* -------------------------------------------------------
+       Authentication Validation
+    ------------------------------------------------------- */
+
+      if (!user?.uid) {
+        throw new Error("You must be logged in before registering.");
       }
 
       if (!user?.email) {
         throw new Error("Authenticated user email is missing.");
       }
 
+      /* -------------------------------------------------------
+       Event Validation
+    ------------------------------------------------------- */
+
+      if (!eventId) {
+        throw new Error("Reunion event ID is missing.");
+      }
+
+      /* -------------------------------------------------------
+       Participant Information
+    ------------------------------------------------------- */
+
+      const name = normalizeString(formData.name);
+
       const formEmail = normalizeString(formData.email).toLowerCase();
 
       const authEmail = normalizeString(user.email).toLowerCase();
+
+      const phone = normalizeString(formData.phone);
+
+      const district = normalizeString(formData.district);
+
+      const city = normalizeString(formData.city);
+
+      if (!name) {
+        throw new Error("Name is required.");
+      }
+
+      if (!formEmail) {
+        throw new Error("Email is required.");
+      }
 
       if (formEmail !== authEmail) {
         throw new Error(
@@ -672,44 +704,110 @@ const ReunionRegister = () => {
         );
       }
 
+      if (!phone) {
+        throw new Error("Phone number is required.");
+      }
+
+      if (!district) {
+        throw new Error("District is required.");
+      }
+
+      if (!city) {
+        throw new Error("City is required.");
+      }
+
+      /* -------------------------------------------------------
+       School Information
+    ------------------------------------------------------- */
+
+      const studentType = normalizeString(formData.studentType).toLowerCase();
+
+      const classLevel = normalizeString(formData.classLevel);
+
+      const batchYear = Number(formData.batchYear);
+
+      const department = isSeniorClass
+        ? normalizeString(formData.department).toLowerCase()
+        : null;
+
+      if (!studentType) {
+        throw new Error("Please select your student type.");
+      }
+
+      if (!classLevel) {
+        throw new Error("Please select your class.");
+      }
+
+      if (!Number.isInteger(batchYear)) {
+        throw new Error("Please enter a valid batch year.");
+      }
+
+      if (isSeniorClass && !department) {
+        throw new Error("Please select your department.");
+      }
+
+      /* -------------------------------------------------------
+       Package Validation
+    ------------------------------------------------------- */
+
       if (!selectedPackage?.packageId) {
         throw new Error("Please select a valid reunion package.");
       }
 
+      /* -------------------------------------------------------
+       T-Shirt Validation
+    ------------------------------------------------------- */
+
       const normalizedTshirtSize = normalizeTshirtSize(formData.tShirtSize);
 
-      const normalizedAvailableSizes =
-        selectedTshirtSizes.map(normalizeTshirtSize);
+      const normalizedAvailableSizes = Array.isArray(selectedTshirtSizes)
+        ? selectedTshirtSizes.map(normalizeTshirtSize)
+        : [];
 
-      if (!normalizedAvailableSizes.includes(normalizedTshirtSize)) {
+      if (!normalizedTshirtSize) {
+        throw new Error("Please select a T-shirt size.");
+      }
+
+      if (
+        normalizedAvailableSizes.length > 0 &&
+        !normalizedAvailableSizes.includes(normalizedTshirtSize)
+      ) {
         throw new Error("Please select a valid T-shirt size.");
       }
 
-      if (!formData.agreeToRules) {
+      /* -------------------------------------------------------
+       Consent Validation
+    ------------------------------------------------------- */
+
+      if (formData.agreeToRules !== true) {
         throw new Error("Please agree to the reunion rules.");
       }
 
+      /* -------------------------------------------------------
+       Final Payload
+    ------------------------------------------------------- */
+
       const payload = {
         participant: {
-          name: normalizeString(formData.name),
+          name,
 
           email: formEmail,
 
-          phone: normalizeString(formData.phone),
+          phone,
+
+          district,
+
+          city,
         },
 
         schoolInfo: {
-          studentType: formData.studentType,
+          studentType,
 
-          classLevel: formData.classLevel,
+          classLevel,
 
-          batchYear: Number(formData.batchYear),
+          batchYear,
 
-          department: isSeniorClass ? formData.department : null,
-
-          district: normalizeString(formData.district),
-
-          city: normalizeString(formData.city),
+          department,
         },
 
         reunion: {
@@ -723,16 +821,23 @@ const ReunionRegister = () => {
         },
 
         consent: {
-          agreedToRules: formData.agreeToRules === true,
+          agreedToRules: true,
 
           agreedAt: new Date().toISOString(),
         },
       };
 
-      /* Development debugging */
+      /* -------------------------------------------------------
+       Development Debugging
+    ------------------------------------------------------- */
+
       console.group("📤 REGISTRATION REQUEST");
 
+      console.log("API URL:", `${API_EVENT_URL}/register`);
+
       console.log("Event ID:", eventId);
+
+      console.log("Authenticated UID:", user.uid);
 
       console.log("Authenticated Email:", user.email);
 
@@ -742,87 +847,16 @@ const ReunionRegister = () => {
 
       console.groupEnd();
 
+      /* -------------------------------------------------------
+       API Request
+    ------------------------------------------------------- */
+
       const response = await axiosSecure.post(
         `${API_EVENT_URL}/register`,
         payload,
       );
 
       return response.data;
-    },
-
-    onSuccess: (data) => {
-      const registration = extractRegistrationFromResponse(data);
-
-      setSubmittedRegistration(registration);
-
-      toast.success("Your reunion registration was completed successfully!");
-
-      setStep(4);
-
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    },
-
-    onError: (error) => {
-      const status = error?.response?.status;
-
-      const code = error?.response?.data?.code;
-
-      const serverData = error?.response?.data;
-
-      console.group("❌ REGISTRATION ERROR");
-
-      console.error("Status:", status);
-
-      console.error("Code:", code);
-
-      console.error("Server Response:", serverData);
-
-      console.error("Message:", serverData?.message);
-
-      console.error("Request URL:", error?.config?.url);
-
-      console.error("Request Method:", error?.config?.method);
-
-      console.error("Request Data:", error?.config?.data);
-
-      console.groupEnd();
-
-      if (status === 401) {
-        toast.error("Your login session has expired. Please login again.");
-
-        navigate("/login", {
-          replace: true,
-
-          state: {
-            from: "/reunion-register",
-          },
-        });
-
-        return;
-      }
-
-      if (status === 409 || code === "reunion/already-registered") {
-        toast.error("You are already registered for this reunion.");
-
-        return;
-      }
-
-      if (status === 403 || code === "reunion/registration-closed") {
-        toast.error("Reunion registration is currently closed.");
-
-        return;
-      }
-
-      if (status === 400) {
-        toast.error(getApiErrorMessage(error));
-
-        return;
-      }
-
-      toast.error(getApiErrorMessage(error));
     },
   });
 

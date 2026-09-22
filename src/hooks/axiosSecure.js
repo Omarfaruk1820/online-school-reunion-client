@@ -1,5 +1,5 @@
 import axios from "axios";
-import { auth } from "../Auth/firebase.config";
+import  {auth}  from "../Auth/firebase.config";
 
 const axiosSecure = axios.create({
   // IMPORTANT:

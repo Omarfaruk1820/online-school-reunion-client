@@ -41,7 +41,7 @@ const Navbar = () => {
   const formattedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1);
 
   const dashboardPath =
-    userRole === "admin" ? "/dashboard/admin" : "/dashboard/student";
+    userRole === "admin" ? "/dashboard/admin" : "/dashboard/student-dashboard";
 
   /* ----------------------------------------
      Navigation Classes
@@ -421,7 +421,7 @@ const Navbar = () => {
                       {/* User Menu */}
                       <div className="p-2">
                         <NavLink
-                          to="/dashboard/profile"
+                          to="/dashboard/my-profile"
                           onClick={closeUserMenu}
                           className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
                         >

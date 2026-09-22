@@ -108,7 +108,7 @@ const adminMenu = [
 const studentMenu = [
   {
     label: "Dashboard",
-    path: "/dashboard/student",
+    path: "/dashboard/student-dashboard",
     icon: FiGrid,
   },
   {
@@ -118,7 +118,7 @@ const studentMenu = [
   },
   {
     label: "Reunion Events",
-    path: "/dashboard/events",
+    path: "/dashboard/my-events",
     icon: FiCalendar,
   },
   {

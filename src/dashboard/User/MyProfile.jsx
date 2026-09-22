@@ -65,6 +65,10 @@ const normalizeString = (value) => {
   return String(value).trim();
 };
 
+const getSafeArray = (value) => {
+  return Array.isArray(value) ? value : [];
+};
+
 const getNestedValue = (object, path, fallback = "") => {
   const value = path.reduce((current, key) => {
     return current?.[key];
@@ -73,11 +77,25 @@ const getNestedValue = (object, path, fallback = "") => {
   return value ?? fallback;
 };
 
+const isValidUrl = (value) => {
+  if (!value) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Build frontend profile.
  *
  * Priority:
- * 1. Existing MongoDB user profile
+ * 1. MongoDB user profile
  * 2. Reunion registration data
  * 3. Firebase authenticated user
  */
@@ -85,9 +103,7 @@ const buildProfileFromData = (userData, registrationInfo, authUser) => {
   const userProfile = userData?.profile || {};
 
   const registration = registrationInfo?.registration || null;
-
   const participant = registration?.participant || {};
-
   const schoolInfo = registration?.schoolInfo || {};
 
   const registrationAddress = [
@@ -142,7 +158,9 @@ const buildProfileFromData = (userData, registrationInfo, authUser) => {
 };
 
 const formatDepartment = (department) => {
-  if (!department) return "Not specified";
+  if (!department) {
+    return "Not specified";
+  }
 
   const departmentMap = {
     science: "Science",
@@ -154,17 +172,24 @@ const formatDepartment = (department) => {
 
   return (
     departmentMap[department] ||
-    department.charAt(0).toUpperCase() + department.slice(1)
+    String(department).charAt(0).toUpperCase() + String(department).slice(1)
   );
 };
 
 const formatStudentType = (type) => {
-  if (!type) return "Not specified";
+  if (!type) {
+    return "Not specified";
+  }
 
-  if (type === "current") return "Current Student";
-  if (type === "alumni") return "Alumni";
+  if (type === "current") {
+    return "Current Student";
+  }
 
-  return type;
+  if (type === "alumni") {
+    return "Alumni";
+  }
+
+  return String(type);
 };
 
 const formatPaymentStatus = (status) => {
@@ -172,17 +197,27 @@ const formatPaymentStatus = (status) => {
     return "Not Required";
   }
 
-  if (status === "paid") return "Paid";
-  if (status === "pending") return "Pending";
-  if (status === "failed") return "Failed";
+  if (status === "paid") {
+    return "Paid";
+  }
 
-  return status;
+  if (status === "pending") {
+    return "Pending";
+  }
+
+  if (status === "failed") {
+    return "Failed";
+  }
+
+  return String(status);
 };
 
 const formatRegistrationStatus = (status) => {
-  if (!status) return "Unknown";
+  if (!status) {
+    return "Unknown";
+  }
 
-  return status
+  return String(status)
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
@@ -190,24 +225,96 @@ const formatRegistrationStatus = (status) => {
 
 const getStatusClasses = (status) => {
   if (status === "confirmed") {
-    return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
 
   if (status === "cancelled") {
-    return "bg-red-50 text-red-700 border-red-200";
+    return "border-red-200 bg-red-50 text-red-700";
   }
 
   if (status === "pending") {
-    return "bg-amber-50 text-amber-700 border-amber-200";
+    return "border-amber-200 bg-amber-50 text-amber-700";
   }
 
-  return "bg-slate-50 text-slate-700 border-slate-200";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+};
+
+/**
+ * Safely convert a gift item into display data.
+ *
+ * Important:
+ * giftPackage.items may contain objects such as:
+ *
+ * {
+ *   id,
+ *   name,
+ *   description,
+ *   quantity,
+ *   included
+ * }
+ *
+ * React cannot render the object directly.
+ */
+const normalizeGiftItem = (item, index) => {
+  if (item === null || item === undefined) {
+    return null;
+  }
+
+  if (typeof item === "string" || typeof item === "number") {
+    return {
+      key: `gift-${index}-${String(item)}`,
+      name: String(item),
+      description: "",
+      quantity: null,
+      included: true,
+    };
+  }
+
+  if (typeof item === "object") {
+    const name =
+      normalizeString(item.name) ||
+      normalizeString(item.title) ||
+      normalizeString(item.label) ||
+      normalizeString(item.description) ||
+      `Gift Item ${index + 1}`;
+
+    const description =
+      normalizeString(item.description) &&
+      normalizeString(item.description) !== name
+        ? normalizeString(item.description)
+        : "";
+
+    const quantity =
+      item.quantity !== undefined &&
+      item.quantity !== null &&
+      String(item.quantity).trim() !== ""
+        ? Number(item.quantity)
+        : null;
+
+    return {
+      key:
+        normalizeString(item.id) ||
+        normalizeString(item._id) ||
+        `gift-${index}-${name}`,
+
+      name,
+
+      description,
+
+      quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+
+      included: item.included === undefined ? true : Boolean(item.included),
+    };
+  }
+
+  return null;
 };
 
 function FieldLabel({ icon: Icon, children, required = false }) {
   return (
     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
-      <Icon className="text-slate-500" size={16} />
+      <Icon className="shrink-0 text-slate-500" size={16} />
+
       <span>{children}</span>
 
       {required && <span className="text-red-500">*</span>}
@@ -217,12 +324,12 @@ function FieldLabel({ icon: Icon, children, required = false }) {
 
 function InfoItem({ icon: Icon, label, value }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex min-w-0 items-start gap-3">
       <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
         <Icon size={17} />
       </div>
 
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
           {label}
         </p>
@@ -235,11 +342,22 @@ function InfoItem({ icon: Icon, label, value }) {
   );
 }
 
+function SectionHeader({ title, description }) {
+  return (
+    <div className="mb-5">
+      <h3 className="text-base font-bold text-slate-900">{title}</h3>
+
+      {description && (
+        <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+      )}
+    </div>
+  );
+}
+
 export default function MyProfile() {
   const { user } = useAuth();
 
   const [profile, setProfile] = useState(EMPTY_PROFILE);
-
   const [originalProfile, setOriginalProfile] = useState(EMPTY_PROFILE);
 
   const [registrationData, setRegistrationData] = useState(null);
@@ -247,6 +365,7 @@ export default function MyProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
 
   const registration = registrationData?.registration || null;
 
@@ -261,12 +380,39 @@ export default function MyProfile() {
   const reunion = registration?.reunion || {};
 
   /**
-   * Profile completion calculation.
+   * Normalize gift package items.
+   *
+   * Supports both:
+   * items: ["Bag", "Mug"]
+   *
+   * and:
+   * items: [
+   *   {
+   *     id: "bag",
+   *     name: "Commemorative Bag",
+   *     quantity: 1,
+   *     included: true
+   *   }
+   * ]
+   */
+  const giftItems = useMemo(() => {
+    const rawItems = giftPackage?.items ?? giftPackage?.gifts ?? [];
+
+    return getSafeArray(rawItems)
+      .map(normalizeGiftItem)
+      .filter(Boolean)
+      .filter((item) => item.included !== false);
+  }, [giftPackage]);
+
+  /**
+   * Profile completion.
+   *
+   * Email is excluded because it is managed by
+   * Firebase authentication and cannot be edited here.
    */
   const profileCompletion = useMemo(() => {
     const fields = [
       profile.name,
-      profile.email,
       profile.phone,
       profile.photo,
       profile.batch,
@@ -284,7 +430,7 @@ export default function MyProfile() {
   }, [profile]);
 
   /**
-   * Load MongoDB profile + reunion registration.
+   * Load MongoDB user profile + reunion registration.
    */
   useEffect(() => {
     if (!user) {
@@ -304,10 +450,6 @@ export default function MyProfile() {
           axiosSecure
             .get("/api/registrations/my-registration")
             .catch((error) => {
-              /**
-               * 404 simply means the user has not
-               * registered for the reunion yet.
-               */
               if (error?.response?.status === 404) {
                 return null;
               }
@@ -316,7 +458,9 @@ export default function MyProfile() {
             }),
         ]);
 
-        if (!isMounted) return;
+        if (!isMounted) {
+          return;
+        }
 
         const userData = profileResponse?.data?.user || null;
 
@@ -345,10 +489,13 @@ export default function MyProfile() {
 
         setProfile(mappedProfile);
         setOriginalProfile(mappedProfile);
+        setPhotoError(false);
       } catch (error) {
         console.error("Failed to load profile data:", error);
 
-        if (!isMounted) return;
+        if (!isMounted) {
+          return;
+        }
 
         toast.error(
           error?.response?.data?.message ||
@@ -356,8 +503,7 @@ export default function MyProfile() {
         );
 
         /**
-         * Even if API loading fails, show Firebase
-         * information instead of an empty screen.
+         * Firebase fallback.
          */
         const fallbackProfile = buildProfileFromData(
           {
@@ -372,6 +518,8 @@ export default function MyProfile() {
 
         setProfile(fallbackProfile);
         setOriginalProfile(fallbackProfile);
+        setRegistrationData(null);
+        setPhotoError(false);
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -393,6 +541,10 @@ export default function MyProfile() {
       ...previous,
       [name]: value,
     }));
+
+    if (name === "photo") {
+      setPhotoError(false);
+    }
   };
 
   const handleEdit = () => {
@@ -401,6 +553,7 @@ export default function MyProfile() {
 
   const handleCancel = () => {
     setProfile(originalProfile);
+    setPhotoError(false);
     setEditing(false);
   };
 
@@ -440,6 +593,11 @@ export default function MyProfile() {
 
     if (photo.length > MAX_LENGTHS.photo) {
       toast.error("Photo URL is too long.");
+      return false;
+    }
+
+    if (photo && !isValidUrl(photo)) {
+      toast.error("Please enter a valid photo URL.");
       return false;
     }
 
@@ -525,12 +683,6 @@ export default function MyProfile() {
 
       const updatedUser = response?.data?.user || null;
 
-      /**
-       * Rebuild profile after save.
-       *
-       * Registration data remains fallback data,
-       * while saved MongoDB profile values get priority.
-       */
       const updatedProfile = buildProfileFromData(
         updatedUser,
         registrationData,
@@ -539,6 +691,7 @@ export default function MyProfile() {
 
       setProfile(updatedProfile);
       setOriginalProfile(updatedProfile);
+      setPhotoError(false);
       setEditing(false);
 
       toast.success(response?.data?.message || "Profile updated successfully.");
@@ -567,15 +720,18 @@ export default function MyProfile() {
     );
   }
 
+  const displayPhoto = profile.photo && !photoError ? profile.photo : "";
+
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
         {/* Page Header */}
         <div className="mb-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
               <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-500">
                 <FiUser size={16} />
+
                 <span>My Account</span>
               </div>
 
@@ -593,18 +749,18 @@ export default function MyProfile() {
               <button
                 type="button"
                 onClick={handleEdit}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 sm:w-auto"
               >
                 <FiEdit3 size={17} />
                 Edit Profile
               </button>
             ) : (
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <button
                   type="button"
                   onClick={handleCancel}
                   disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   <FiX size={17} />
                   Cancel
@@ -614,7 +770,7 @@ export default function MyProfile() {
                   type="submit"
                   form="profile-form"
                   disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {saving ? (
                     <>
@@ -634,14 +790,14 @@ export default function MyProfile() {
         </div>
 
         {/* Registration Notice */}
-        {registration && (
+        {registration ? (
           <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
                 <FiCheckCircle size={20} />
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <h2 className="font-semibold text-emerald-900">
                   Reunion registration found
                 </h2>
@@ -653,16 +809,14 @@ export default function MyProfile() {
               </div>
             </div>
           </div>
-        )}
-
-        {!registration && (
+        ) : (
           <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
                 <FiAlertCircle size={20} />
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <h2 className="font-semibold text-amber-900">
                   No reunion registration found
                 </h2>
@@ -677,8 +831,8 @@ export default function MyProfile() {
         )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Main Profile Form */}
-          <div className="lg:col-span-2">
+          {/* Main Profile */}
+          <div className="min-w-0 lg:col-span-2">
             <form
               id="profile-form"
               onSubmit={handleSubmit}
@@ -687,15 +841,13 @@ export default function MyProfile() {
               {/* Profile Header */}
               <div className="border-b border-slate-200 px-5 py-6 sm:px-7">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                  <div className="relative">
-                    {profile.photo ? (
+                  <div className="shrink-0">
+                    {displayPhoto ? (
                       <img
-                        src={profile.photo}
+                        src={displayPhoto}
                         alt={profile.name || "Profile"}
                         className="h-24 w-24 rounded-2xl border border-slate-200 object-cover shadow-sm"
-                        onError={(event) => {
-                          event.currentTarget.style.display = "none";
-                        }}
+                        onError={() => setPhotoError(true)}
                       />
                     ) : (
                       <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
@@ -705,7 +857,7 @@ export default function MyProfile() {
                   </div>
 
                   <div className="min-w-0">
-                    <h2 className="text-xl font-bold text-slate-900">
+                    <h2 className="break-words text-xl font-bold text-slate-900">
                       {profile.name || "Your Profile"}
                     </h2>
 
@@ -715,6 +867,7 @@ export default function MyProfile() {
 
                     <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
                       <FiShield size={13} />
+
                       {user?.emailVerified ? "Verified Account" : "Account"}
                     </div>
                   </div>
@@ -725,15 +878,10 @@ export default function MyProfile() {
               <div className="space-y-8 p-5 sm:p-7">
                 {/* Personal Information */}
                 <section>
-                  <div className="mb-5">
-                    <h3 className="text-base font-bold text-slate-900">
-                      Personal Information
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      Keep your personal information accurate and up to date.
-                    </p>
-                  </div>
+                  <SectionHeader
+                    title="Personal Information"
+                    description="Keep your personal information accurate and up to date."
+                  />
 
                   <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                     {/* Name */}
@@ -750,6 +898,7 @@ export default function MyProfile() {
                         disabled={!editing}
                         maxLength={MAX_LENGTHS.name}
                         placeholder="Enter your full name"
+                        autoComplete="name"
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600"
                       />
 
@@ -770,6 +919,7 @@ export default function MyProfile() {
                         value={profile.email}
                         disabled
                         readOnly
+                        autoComplete="email"
                         placeholder="Your email address"
                         className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
                       />
@@ -790,6 +940,8 @@ export default function MyProfile() {
                         onChange={handleChange}
                         disabled={!editing}
                         maxLength={MAX_LENGTHS.phone}
+                        inputMode="numeric"
+                        autoComplete="tel"
                         placeholder="01XXXXXXXXX"
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600"
                       />
@@ -801,7 +953,7 @@ export default function MyProfile() {
                       )}
                     </div>
 
-                    {/* Photo URL */}
+                    {/* Photo */}
                     <div>
                       <FieldLabel icon={FiGlobe}>Photo URL</FieldLabel>
 
@@ -812,6 +964,7 @@ export default function MyProfile() {
                         onChange={handleChange}
                         disabled={!editing}
                         maxLength={MAX_LENGTHS.photo}
+                        autoComplete="url"
                         placeholder="https://example.com/photo.jpg"
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600"
                       />
@@ -821,15 +974,10 @@ export default function MyProfile() {
 
                 {/* School Information */}
                 <section className="border-t border-slate-100 pt-8">
-                  <div className="mb-5">
-                    <h3 className="text-base font-bold text-slate-900">
-                      School Information
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      Your school and reunion-related information.
-                    </p>
-                  </div>
+                  <SectionHeader
+                    title="School Information"
+                    description="Your school and reunion-related information."
+                  />
 
                   <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                     {/* Batch */}
@@ -906,7 +1054,7 @@ export default function MyProfile() {
                       )}
                     </div>
 
-                    {/* Student Type - Read Only */}
+                    {/* Student Type */}
                     <div>
                       <FieldLabel icon={FiUser}>Student Type</FieldLabel>
 
@@ -927,16 +1075,10 @@ export default function MyProfile() {
 
                 {/* Professional Information */}
                 <section className="border-t border-slate-100 pt-8">
-                  <div className="mb-5">
-                    <h3 className="text-base font-bold text-slate-900">
-                      Professional Information
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      Tell other reunion members about your current professional
-                      journey.
-                    </p>
-                  </div>
+                  <SectionHeader
+                    title="Professional Information"
+                    description="Tell other reunion members about your current professional journey."
+                  />
 
                   <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                     {/* Profession */}
@@ -977,15 +1119,10 @@ export default function MyProfile() {
 
                 {/* Location */}
                 <section className="border-t border-slate-100 pt-8">
-                  <div className="mb-5">
-                    <h3 className="text-base font-bold text-slate-900">
-                      Location
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      Your current address or location.
-                    </p>
-                  </div>
+                  <SectionHeader
+                    title="Location"
+                    description="Your current address or location."
+                  />
 
                   <div>
                     <FieldLabel icon={FiMapPin}>Address</FieldLabel>
@@ -1001,7 +1138,7 @@ export default function MyProfile() {
                       className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600"
                     />
 
-                    {registration?.participant?.district && (
+                    {participant?.district && (
                       <p className="mt-1.5 text-xs text-slate-400">
                         Pre-filled from your reunion registration location.
                       </p>
@@ -1011,15 +1148,10 @@ export default function MyProfile() {
 
                 {/* Bio */}
                 <section className="border-t border-slate-100 pt-8">
-                  <div className="mb-5">
-                    <h3 className="text-base font-bold text-slate-900">
-                      About You
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      A short introduction about yourself.
-                    </p>
-                  </div>
+                  <SectionHeader
+                    title="About You"
+                    description="A short introduction about yourself."
+                  />
 
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">
@@ -1045,7 +1177,7 @@ export default function MyProfile() {
                   </div>
                 </section>
 
-                {/* Save button for mobile / bottom */}
+                {/* Bottom Save Buttons */}
                 {editing && (
                   <div className="border-t border-slate-100 pt-6">
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -1053,7 +1185,7 @@ export default function MyProfile() {
                         type="button"
                         onClick={handleCancel}
                         disabled={saving}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                       >
                         <FiX size={17} />
                         Cancel
@@ -1062,7 +1194,7 @@ export default function MyProfile() {
                       <button
                         type="submit"
                         disabled={saving}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                       >
                         {saving ? (
                           <>
@@ -1084,11 +1216,11 @@ export default function MyProfile() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-6">
             {/* Profile Completion */}
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
                   <h3 className="font-bold text-slate-900">
                     Profile Completion
                   </h3>
@@ -1098,7 +1230,7 @@ export default function MyProfile() {
                   </p>
                 </div>
 
-                <span className="text-lg font-bold text-slate-900">
+                <span className="shrink-0 text-lg font-bold text-slate-900">
                   {profileCompletion}%
                 </span>
               </div>
@@ -1159,7 +1291,6 @@ export default function MyProfile() {
                     </span>
                   </div>
 
-                  {/* Event */}
                   <InfoItem
                     icon={FiCalendar}
                     label="Event"
@@ -1170,14 +1301,12 @@ export default function MyProfile() {
                     }
                   />
 
-                  {/* Student Type */}
                   <InfoItem
                     icon={FiUser}
                     label="Student Type"
                     value={formatStudentType(schoolInfo?.studentType)}
                   />
 
-                  {/* Batch */}
                   <InfoItem
                     icon={FiCalendar}
                     label="Batch"
@@ -1188,7 +1317,6 @@ export default function MyProfile() {
                     }
                   />
 
-                  {/* Class */}
                   <InfoItem
                     icon={FiUser}
                     label="Class"
@@ -1199,21 +1327,18 @@ export default function MyProfile() {
                     }
                   />
 
-                  {/* Department */}
                   <InfoItem
                     icon={FiBriefcase}
                     label="Department"
                     value={formatDepartment(schoolInfo?.department)}
                   />
 
-                  {/* T-Shirt */}
                   <InfoItem
                     icon={FiUser}
                     label="T-Shirt Size"
                     value={reunion?.tShirt?.size || "Not specified"}
                   />
 
-                  {/* Payment */}
                   <InfoItem
                     icon={FiShield}
                     label="Payment"
@@ -1243,49 +1368,76 @@ export default function MyProfile() {
 
             {/* Gift Package */}
             {registration && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="font-bold text-slate-900">Reunion Package</h3>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-200 px-5 py-4">
+                  <h3 className="font-bold text-slate-900">Reunion Package</h3>
 
-                <p className="mt-1 text-xs text-slate-500">
-                  Your registered gift package.
-                </p>
-
-                <div className="mt-4 rounded-xl bg-slate-50 p-4">
-                  <p className="font-semibold text-slate-800">
-                    {giftPackage?.name ||
-                      reunion?.packageName ||
-                      "General Reunion Package"}
+                  <p className="mt-1 text-xs text-slate-500">
+                    Your registered gift package.
                   </p>
+                </div>
 
-                  {Array.isArray(giftPackage?.items) &&
-                    giftPackage.items.length > 0 && (
-                      <ul className="mt-3 space-y-2">
-                        {giftPackage.items.map((item, index) => (
+                <div className="p-5">
+                  <div className="rounded-xl bg-slate-50 p-4">
+                    <p className="font-semibold text-slate-800">
+                      {giftPackage?.name ||
+                        reunion?.packageName ||
+                        "General Reunion Package"}
+                    </p>
+
+                    {/* SAFE GIFT ITEM RENDERING */}
+                    {giftItems.length > 0 ? (
+                      <ul className="mt-4 space-y-3">
+                        {giftItems.map((item) => (
                           <li
-                            key={`${item}-${index}`}
-                            className="flex items-start gap-2 text-xs text-slate-600"
+                            key={item.key}
+                            className="flex items-start gap-2.5"
                           >
                             <FiCheckCircle
                               className="mt-0.5 shrink-0 text-emerald-500"
-                              size={14}
+                              size={15}
                             />
-                            <span>{item}</span>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="break-words text-sm font-medium text-slate-700">
+                                  {item.name}
+                                </span>
+
+                                {item.quantity && item.quantity > 1 && (
+                                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                                    × {item.quantity}
+                                  </span>
+                                )}
+                              </div>
+
+                              {item.description && (
+                                <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                                  {item.description}
+                                </p>
+                              )}
+                            </div>
                           </li>
                         ))}
                       </ul>
+                    ) : (
+                      <p className="mt-3 text-xs leading-5 text-slate-500">
+                        Gift package details are not available yet.
+                      </p>
                     )}
 
-                  {reunion?.tShirt?.size && (
-                    <div className="mt-4 border-t border-slate-200 pt-3">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-500">T-Shirt Size</span>
+                    {reunion?.tShirt?.size && (
+                      <div className="mt-4 border-t border-slate-200 pt-3">
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-slate-500">T-Shirt Size</span>
 
-                        <span className="font-bold text-slate-800">
-                          {reunion.tShirt.size}
-                        </span>
+                          <span className="font-bold text-slate-800">
+                            {reunion.tShirt.size}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1324,12 +1476,13 @@ export default function MyProfile() {
                   <FiCheckCircle size={18} />
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <h3 className="font-semibold">Profile Tip</h3>
 
                   <p className="mt-1.5 text-xs leading-5 text-slate-300">
-                    Keep your phone number, profession, organization and address
-                    updated so reunion organizers can maintain accurate records.
+                    Keep your phone number, profession, organization, and
+                    address updated so reunion organizers can maintain accurate
+                    records.
                   </p>
                 </div>
               </div>

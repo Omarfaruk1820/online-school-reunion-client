@@ -2,7 +2,6 @@ import { useEffect, useMemo } from "react";
 import {
   FiArrowRight,
   FiCalendar,
-  FiCamera,
   FiCheckCircle,
   FiChevronRight,
   FiClock,
@@ -22,9 +21,16 @@ import {
 } from "react-icons/fi";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import useAuth from "../../hooks/useAuth";
-import axiosSecure  from "../../hooks/axiosSecure";
 import toast from "react-hot-toast";
+
+import useAuth from "../../hooks/useAuth";
+import axiosSecure from "../../hooks/axiosSecure";
+
+/* =========================================================
+   API
+========================================================= */
+
+const API_REGISTRATIONS_URL = "/api/registrations";
 
 /* =========================================================
    HELPERS
@@ -33,6 +39,7 @@ import toast from "react-hot-toast";
 const formatStudentType = (value) => {
   if (value === "alumni") return "Alumni";
   if (value === "current") return "Current Student";
+
   return "—";
 };
 
@@ -89,11 +96,11 @@ const formatDateTime = (value) => {
 const formatEventDate = (value) => {
   if (!value) return "—";
 
-  /*
-   * Adding T00:00:00 prevents the YYYY-MM-DD value
-   * from shifting to the previous day in some timezones.
-   */
-  const date = new Date(`${value}T00:00:00`);
+  const rawValue = String(value);
+
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(rawValue)
+    ? new Date(`${rawValue}T00:00:00`)
+    : new Date(rawValue);
 
   if (Number.isNaN(date.getTime())) {
     return "—";
@@ -114,8 +121,15 @@ const formatTime = (value) => {
   const hour = Number(hourString);
   const minute = Number(minuteString);
 
-  if (Number.isNaN(hour) || Number.isNaN(minute)) {
-    return value;
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return String(value);
   }
 
   const date = new Date();
@@ -141,11 +155,19 @@ const getInitials = (name) => {
 };
 
 const formatVenue = (venue) => {
-  if (!venue) return "School Campus";
+  if (!venue) {
+    return "School Campus";
+  }
 
-  return [venue.name, venue.address, venue.city, venue.country]
-    .filter(Boolean)
-    .join(", ");
+  if (typeof venue === "string") {
+    return venue;
+  }
+
+  return (
+    [venue.name, venue.address, venue.city, venue.country]
+      .filter(Boolean)
+      .join(", ") || "School Campus"
+  );
 };
 
 const getAttendanceLabel = (status) => {
@@ -178,7 +200,7 @@ const getAttendanceColor = (status) => {
 
 const InfoItem = ({ icon: Icon, label, value }) => {
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex min-w-0 items-start gap-3">
       <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
         <Icon className="h-4 w-4" />
       </div>
@@ -200,7 +222,6 @@ const StatusBadge = ({ status }) => {
   const normalized = String(status || "").toLowerCase();
 
   let classes = "bg-slate-100 text-slate-600";
-
   let Icon = FiInfo;
 
   if (
@@ -222,14 +243,18 @@ const StatusBadge = ({ status }) => {
     Icon = FiClock;
   }
 
-  if (normalized === "cancelled" || normalized === "cancelled") {
+  if (
+    normalized === "cancelled" ||
+    normalized === "canceled" ||
+    normalized === "rejected"
+  ) {
     classes = "bg-red-50 text-red-700";
     Icon = FiXCircle;
   }
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${classes}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${classes}`}
     >
       <Icon className="h-3.5 w-3.5" />
 
@@ -242,7 +267,7 @@ const QuickAction = ({ to, icon: Icon, title, description }) => {
   return (
     <Link
       to={to}
-      className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+      className="group flex min-w-0 items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
     >
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition group-hover:bg-slate-900 group-hover:text-white">
         <Icon className="h-5 w-5" />
@@ -256,6 +281,24 @@ const QuickAction = ({ to, icon: Icon, title, description }) => {
 
       <FiChevronRight className="h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-1 group-hover:text-slate-600" />
     </Link>
+  );
+};
+
+/* =========================================================
+   LOADING COMPONENT
+========================================================= */
+
+const DashboardLoading = () => {
+  return (
+    <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-4">
+      <div className="flex flex-col items-center gap-3">
+        <FiLoader className="h-8 w-8 animate-spin text-slate-700" />
+
+        <p className="text-sm font-medium text-slate-500">
+          Loading your dashboard...
+        </p>
+      </div>
+    </div>
   );
 };
 
@@ -303,30 +346,35 @@ const StudentDashboard = () => {
     queryKey: ["my-reunion-registration", user?.uid],
 
     queryFn: async () => {
-      const response = await axiosSecure.get("/registrations/my-registration");
+      const response = await axiosSecure.get(
+        `${API_REGISTRATIONS_URL}/my-registration`,
+      );
 
       return response.data;
     },
 
     enabled: !authLoading && Boolean(user),
 
-    retry: 1,
+    retry: false,
 
     staleTime: 30 * 1000,
   });
 
   /* =======================================================
-     FALLBACK EVENT QUERY
-     
-     Useful if the backend is running an older version
-     of /my-registration.
+     EVENT
   ======================================================= */
 
-  const { data: eventResponse, isLoading: eventLoading } = useQuery({
+  const {
+    data: eventResponse,
+    isLoading: eventLoading,
+    isError: eventError,
+    error: eventQueryError,
+    refetch: refetchEvent,
+  } = useQuery({
     queryKey: ["reunion-registration-event"],
 
     queryFn: async () => {
-      const response = await axiosSecure.get("/registrations");
+      const response = await axiosSecure.get(API_REGISTRATIONS_URL);
 
       return response.data;
     },
@@ -352,6 +400,13 @@ const StudentDashboard = () => {
     registrationError && registrationQueryError?.response?.status === 404;
 
   /* =======================================================
+     EVENT LOADING / ERROR
+  ======================================================= */
+
+  const eventRequestFailed =
+    eventError && eventQueryError?.response?.status !== 404;
+
+  /* =======================================================
      DERIVED DATA
   ======================================================= */
 
@@ -374,15 +429,15 @@ const StudentDashboard = () => {
   const eventTitle =
     event?.title || reunionInfo.eventTitle || "Grand School Reunion 2027";
 
-  const eventDate = event?.eventDate || null;
+  const eventDate = event?.eventDate || reunionInfo.eventDate || null;
 
-  const eventWeekday = event?.weekday || null;
+  const eventWeekday = event?.weekday || reunionInfo.weekday || null;
 
-  const eventStartTime = event?.startTime || "09:00";
+  const eventStartTime = event?.startTime || reunionInfo.startTime || "09:00";
 
-  const eventEndTime = event?.endTime || "17:00";
+  const eventEndTime = event?.endTime || reunionInfo.endTime || "17:00";
 
-  const eventVenue = formatVenue(event?.venue);
+  const eventVenue = formatVenue(event?.venue || reunionInfo.venue);
 
   /* =======================================================
      PROFILE COMPLETION
@@ -440,7 +495,7 @@ const StudentDashboard = () => {
       return giftPackage.gifts;
     }
 
-    if (Array.isArray(event?.gifts?.items)) {
+    if (Array.isArray(event?.gifts?.items) && event.gifts.items.length > 0) {
       return event.gifts.items;
     }
 
@@ -449,31 +504,21 @@ const StudentDashboard = () => {
 
   /* =======================================================
      SCHEDULE
-     
-     We intentionally don't create fake schedule data.
-     The schedule page can load the real schedule when
-     that API is available.
   ======================================================= */
 
   const scheduleItems = Array.isArray(event?.schedule) ? event.schedule : [];
 
   /* =======================================================
-     LOADING
+     AUTH LOADING
   ======================================================= */
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-[70vh] items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <FiLoader className="h-8 w-8 animate-spin text-slate-700" />
-
-          <p className="text-sm font-medium text-slate-500">
-            Loading your account...
-          </p>
-        </div>
-      </div>
-    );
+    return <DashboardLoading />;
   }
+
+  /* =======================================================
+     NOT AUTHENTICATED
+  ======================================================= */
 
   if (!user) {
     return (
@@ -502,6 +547,7 @@ const StudentDashboard = () => {
 
             <div className="mt-8 grid gap-6 lg:grid-cols-3">
               <div className="h-64 rounded-3xl bg-slate-200 lg:col-span-2" />
+
               <div className="h-64 rounded-3xl bg-slate-200" />
             </div>
 
@@ -513,7 +559,7 @@ const StudentDashboard = () => {
   }
 
   /* =======================================================
-     NO REGISTRATION
+     REGISTRATION NOT FOUND
   ======================================================= */
 
   if (registrationNotFound || !registration) {
@@ -554,14 +600,14 @@ const StudentDashboard = () => {
 
                     <p className="mt-1 text-sm leading-6 text-amber-800">
                       Register for the reunion to receive your participant
-                      information, gift package and attendance QR status here.
+                      information, gift package and attendance status here.
                     </p>
                   </div>
                 </div>
               </div>
 
               {event && (
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div className="mt-6 grid gap-5 sm:grid-cols-2">
                   <InfoItem
                     icon={FiCalendar}
                     label="Event"
@@ -573,7 +619,7 @@ const StudentDashboard = () => {
                     label="Date & Time"
                     value={`${formatEventDate(eventDate)} • ${formatTime(
                       eventStartTime,
-                    )}–${formatTime(eventEndTime)}`}
+                    )} – ${formatTime(eventEndTime)}`}
                   />
 
                   <InfoItem icon={FiMapPin} label="Venue" value={eventVenue} />
@@ -597,12 +643,21 @@ const StudentDashboard = () => {
 
                 <button
                   type="button"
-                  onClick={() => refetchRegistration()}
+                  onClick={() => {
+                    refetchRegistration();
+                    refetchEvent();
+                  }}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
                 >
                   Check Again
                 </button>
               </div>
+
+              {eventRequestFailed && (
+                <p className="mt-5 text-xs text-slate-400">
+                  Event information could not be loaded at this time.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -611,7 +666,7 @@ const StudentDashboard = () => {
   }
 
   /* =======================================================
-     API ERROR
+     REGISTRATION API ERROR
   ======================================================= */
 
   if (registrationError && !registrationNotFound) {
@@ -647,7 +702,7 @@ const StudentDashboard = () => {
   }
 
   /* =======================================================
-     MAIN DASHBOARD
+     DASHBOARD DATA
   ======================================================= */
 
   const attendanceStatus = attendance.status || "not-checked-in";
@@ -658,34 +713,38 @@ const StudentDashboard = () => {
 
   const registrationStatus = registration.status || "confirmed";
 
+  /* =======================================================
+     MAIN DASHBOARD
+  ======================================================= */
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* ===================================================
-          PAGE HEADER
+          HEADER
       =================================================== */}
 
       <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex min-w-0 items-center gap-4">
               {photoURL ? (
                 <img
                   src={photoURL}
                   alt={displayName}
-                  className="h-14 w-14 rounded-2xl object-cover ring-4 ring-slate-100"
+                  className="h-14 w-14 shrink-0 rounded-2xl object-cover ring-4 ring-slate-100"
                 />
               ) : (
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white ring-4 ring-slate-100">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white ring-4 ring-slate-100">
                   {getInitials(displayName)}
                 </div>
               )}
 
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
                   Student Dashboard
                 </p>
 
-                <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
                   Welcome, {displayName}
                 </h1>
 
@@ -711,7 +770,7 @@ const StudentDashboard = () => {
       </section>
 
       {/* ===================================================
-          MAIN CONTENT
+          MAIN
       =================================================== */}
 
       <main className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
@@ -726,14 +785,14 @@ const StudentDashboard = () => {
             <div className="absolute -bottom-24 -left-20 h-72 w-72 rounded-full bg-white/5 blur-3xl" />
 
             <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:p-10">
-              <div>
+              <div className="min-w-0">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200">
                   <FiStar className="h-3.5 w-3.5" />
 
                   {event?.edition || "76 Years Celebration"}
                 </div>
 
-                <h2 className="mt-5 max-w-3xl text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
+                <h2 className="mt-5 max-w-3xl break-words text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
                   {eventTitle}
                 </h2>
 
@@ -743,13 +802,13 @@ const StudentDashboard = () => {
                 </p>
 
                 <div className="mt-7 flex flex-wrap gap-3">
-                  <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="min-w-0 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                       Registration ID
                     </p>
 
-                    <p className="mt-1 font-mono text-sm font-bold text-white">
-                      {registration.registrationId}
+                    <p className="mt-1 break-all font-mono text-sm font-bold text-white">
+                      {registration.registrationId || "—"}
                     </p>
                   </div>
 
@@ -768,11 +827,11 @@ const StudentDashboard = () => {
               <div className="flex items-end lg:justify-end">
                 <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-5 lg:w-72">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
                       <FiCalendar className="h-5 w-5" />
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-400">
                         Reunion Date
                       </p>
@@ -784,11 +843,11 @@ const StudentDashboard = () => {
                   </div>
 
                   <div className="mt-5 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
                       <FiClock className="h-5 w-5" />
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-400">
                         Event Time
                       </p>
@@ -802,7 +861,7 @@ const StudentDashboard = () => {
                   </div>
 
                   <div className="mt-5 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
                       <FiMapPin className="h-5 w-5" />
                     </div>
 
@@ -823,15 +882,15 @@ const StudentDashboard = () => {
         </section>
 
         {/* =================================================
-            STAT CARDS
+            STATUS CARDS
         ================================================= */}
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {/* Registration */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                 <FiCheckCircle className="h-5 w-5" />
               </div>
 
@@ -850,9 +909,9 @@ const StudentDashboard = () => {
           {/* Attendance */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-3">
               <div
-                className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
                   attendanceColor === "emerald"
                     ? "bg-emerald-50 text-emerald-600"
                     : "bg-amber-50 text-amber-600"
@@ -876,8 +935,8 @@ const StudentDashboard = () => {
           {/* Gift */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
                 <FiGift className="h-5 w-5" />
               </div>
 
@@ -900,8 +959,8 @@ const StudentDashboard = () => {
           {/* Profile */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <FiUser className="h-5 w-5" />
               </div>
 
@@ -930,13 +989,11 @@ const StudentDashboard = () => {
         </section>
 
         {/* =================================================
-            TWO COLUMN CONTENT
+            PARTICIPANT + REGISTRATION
         ================================================= */}
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-          {/* ===============================================
-              PARTICIPANT INFORMATION
-          =============================================== */}
+          {/* Participant Information */}
 
           <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-6 sm:flex-row sm:items-center sm:justify-between">
@@ -1014,9 +1071,7 @@ const StudentDashboard = () => {
             </div>
           </div>
 
-          {/* ===============================================
-              REGISTRATION SUMMARY
-          =============================================== */}
+          {/* Registration Summary */}
 
           <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-6">
@@ -1036,12 +1091,12 @@ const StudentDashboard = () => {
                 </p>
 
                 <p className="mt-2 break-all font-mono text-sm font-black text-slate-900">
-                  {registration.registrationId}
+                  {registration.registrationId || "—"}
                 </p>
               </div>
 
               <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-5">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-slate-400">Registered On</p>
 
                   <p className="mt-1 text-sm font-bold text-slate-800">
@@ -1049,10 +1104,10 @@ const StudentDashboard = () => {
                   </p>
                 </div>
 
-                <FiCalendar className="h-5 w-5 text-slate-300" />
+                <FiCalendar className="h-5 w-5 shrink-0 text-slate-300" />
               </div>
 
-              <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs text-slate-400">Payment</p>
 
@@ -1073,7 +1128,7 @@ const StudentDashboard = () => {
                   </p>
                 </div>
 
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-700">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-700">
                   {reunionInfo.tShirt?.size || "—"}
                 </div>
               </div>
@@ -1115,28 +1170,33 @@ const StudentDashboard = () => {
           <div className="p-6">
             {giftItems.length > 0 ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {giftItems.map((item, index) => (
-                  <div
-                    key={`${item}-${index}`}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
-                  >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm">
-                      <FiPackage className="h-4 w-4" />
-                    </div>
+                {giftItems.map((item, index) => {
+                  const itemName =
+                    typeof item === "string"
+                      ? item
+                      : item?.name || item?.title || "Gift Item";
 
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-800">
-                        {typeof item === "string"
-                          ? item
-                          : item?.name || item?.title || "Gift Item"}
-                      </p>
+                  return (
+                    <div
+                      key={`gift-${index}-${itemName}`}
+                      className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm">
+                        <FiPackage className="h-4 w-4" />
+                      </div>
 
-                      <p className="mt-0.5 text-xs text-emerald-600">
-                        Included
-                      </p>
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-bold text-slate-800">
+                          {itemName}
+                        </p>
+
+                        <p className="mt-0.5 text-xs text-emerald-600">
+                          Included
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center">
@@ -1155,7 +1215,7 @@ const StudentDashboard = () => {
             {reunionInfo.tShirt?.size && (
               <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
                     <FiPackage className="h-5 w-5" />
                   </div>
 
@@ -1170,7 +1230,7 @@ const StudentDashboard = () => {
                   </div>
                 </div>
 
-                <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                <span className="self-start rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 sm:self-auto">
                   Selected
                 </span>
               </div>
@@ -1179,14 +1239,14 @@ const StudentDashboard = () => {
         </section>
 
         {/* =================================================
-            ATTENDANCE
+            ATTENDANCE + EVENT
         ================================================= */}
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
-          {/* QR STATUS */}
+          {/* QR */}
 
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
                   Attendance
@@ -1197,14 +1257,14 @@ const StudentDashboard = () => {
                 </h3>
               </div>
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
                 <FiShield className="h-5 w-5" />
               </div>
             </div>
 
             <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
               <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
                   {qrCode.enabled !== false && qrCode.status === "active" ? (
                     <FiCheckCircle className="h-7 w-7 text-emerald-600" />
                   ) : (
@@ -1228,7 +1288,7 @@ const StudentDashboard = () => {
             </div>
 
             <div className="mt-4 rounded-2xl bg-slate-900 p-5 text-white">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-xs text-slate-400">Current Attendance</p>
 
@@ -1237,7 +1297,7 @@ const StudentDashboard = () => {
                   </p>
                 </div>
 
-                <FiShield className="h-6 w-6 text-slate-400" />
+                <FiShield className="h-6 w-6 shrink-0 text-slate-400" />
               </div>
             </div>
 
@@ -1247,10 +1307,10 @@ const StudentDashboard = () => {
             </p>
           </div>
 
-          {/* EVENT DETAILS */}
+          {/* Event Information */}
 
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
                   Event Information
@@ -1261,32 +1321,42 @@ const StudentDashboard = () => {
                 </h3>
               </div>
 
-              <FiCalendar className="h-6 w-6 text-slate-300" />
+              <FiCalendar className="h-6 w-6 shrink-0 text-slate-300" />
             </div>
 
-            <div className="mt-6 grid gap-5 sm:grid-cols-2">
-              <InfoItem
-                icon={FiCalendar}
-                label="Date"
-                value={formatEventDate(eventDate)}
-              />
+            {eventLoading ? (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl bg-slate-50 p-5">
+                <FiLoader className="h-5 w-5 animate-spin text-slate-500" />
 
-              <InfoItem
-                icon={FiClock}
-                label="Time"
-                value={`${formatTime(eventStartTime)} – ${formatTime(
-                  eventEndTime,
-                )}`}
-              />
+                <p className="text-sm text-slate-500">
+                  Loading event information...
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                <InfoItem
+                  icon={FiCalendar}
+                  label="Date"
+                  value={formatEventDate(eventDate)}
+                />
 
-              <InfoItem icon={FiMapPin} label="Venue" value={eventVenue} />
+                <InfoItem
+                  icon={FiClock}
+                  label="Time"
+                  value={`${formatTime(
+                    eventStartTime,
+                  )} – ${formatTime(eventEndTime)}`}
+                />
 
-              <InfoItem
-                icon={FiUsers}
-                label="Edition"
-                value={event?.edition || "76 Years Celebration"}
-              />
-            </div>
+                <InfoItem icon={FiMapPin} label="Venue" value={eventVenue} />
+
+                <InfoItem
+                  icon={FiUsers}
+                  label="Edition"
+                  value={event?.edition || "76 Years Celebration"}
+                />
+              </div>
+            )}
 
             <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
               <div className="flex gap-3">
@@ -1356,7 +1426,7 @@ const StudentDashboard = () => {
         </section>
 
         {/* =================================================
-            SCHEDULE PREVIEW
+            SCHEDULE
         ================================================= */}
 
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -1386,13 +1456,13 @@ const StudentDashboard = () => {
                 {scheduleItems.slice(0, 5).map((item, index) => (
                   <div
                     key={item?._id || item?.id || index}
-                    className="flex gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                    className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:flex-row sm:gap-4"
                   >
-                    <div className="min-w-20 text-sm font-black text-slate-700">
+                    <div className="shrink-0 text-sm font-black text-slate-700 sm:min-w-20">
                       {item?.startTime || item?.time || "—"}
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-800">
                         {item?.title || item?.name || "Program"}
                       </p>
@@ -1437,7 +1507,7 @@ const StudentDashboard = () => {
 
         <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
               <FiShield className="h-4 w-4" />
             </div>
 
